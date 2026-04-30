@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "test: all",
+      "type": "shell",
+      "command": "pnpm check",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "build: extension",
+      "type": "shell",
+      "command": "pnpm --filter @blakebecker/glide-extension build",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "dev: extension watch",
+      "type": "shell",
+      "command": "pnpm --filter @blakebecker/glide-extension dev",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
