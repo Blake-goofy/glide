@@ -498,11 +498,11 @@ export function installSessionStrip(doc: Document = document): () => void {
 
       const nextHeight = Math.ceil(root.getBoundingClientRect().height || root.offsetHeight || root.scrollHeight || 0);
       doc.documentElement.style.setProperty(offsetVar, `${nextHeight}px`);
-      syncOffsetTargets(nextHeight);
+      syncOffsetTargets();
     });
   }
 
-  function syncOffsetTargets(offsetHeight: number): void {
+  function syncOffsetTargets(): void {
     const nextTargets = findOffsetTargets();
 
     for (const target of offsetTargets) {
