@@ -564,7 +564,7 @@ export function installSessionStrip(doc: Document = document): () => void {
     return Boolean(rect.height || element.offsetHeight || element.scrollHeight);
   }
 
-  function applyOffsetTarget(target: HTMLElement, _offsetHeight: number): void {
+  function applyOffsetTarget(target: HTMLElement): void {
     const activeWindow = doc.defaultView ?? window;
     const isIonContent = target.tagName.toLowerCase() === 'ion-content';
     const hostOffsetExpression = `calc(var(${offsetBaseTopVar}, 0px) + var(${offsetVar}, 0px))`;

@@ -364,7 +364,6 @@ describe('page enhancements', () => {
     const request = await bridgeRequest;
     await flushAnimationFrame();
     const strip = document.querySelector<HTMLElement>('.glide-session-strip');
-    const main = document.querySelector<HTMLElement>('main');
 
     expect(request.detail).toMatchObject({
       payload: {

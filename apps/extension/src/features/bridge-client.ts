@@ -1,7 +1,6 @@
 import {
   createMessageId,
   glideProtocol,
-  type GlideContentMessage,
   type GlideBridgeMessage,
   type UserActionProcedureName,
   type UserActionResponse,
