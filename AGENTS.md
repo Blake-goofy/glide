@@ -15,19 +15,19 @@ The extension exists to make authenticated SCALE workflows smoother while keepin
 - typed shared message contracts between the background, content scripts, and bridge
 - regression tests for every behavior change
 
-The old desktop launcher repository is a reference implementation for behavior and tests only. Do not port Tauri, Rust, Chrome spawning, DevTools Protocol injection, installer flow, local profile management, or legacy launcher naming into this repository.
+The old desktop launcher repository remains a historical reference for behavior and tests only. Do not port Tauri, Rust, Chrome spawning, DevTools Protocol injection, installer flow, local profile management, or legacy launcher naming into this repository.
 
 ## Naming And Ownership
 
 - The author is Blake Becker.
 - The product name is GLIDE.
 - Do not use legacy company, package-scope, or launcher-product naming in new metadata, package names, code namespaces, or generated artifacts.
-- Old repository names may appear only in migration notes when pointing to reference files.
+- Old repository names may appear only in historical notes or contributor discussion when pointing to reference files.
 
 ## Design Principles
 
-1. Prove the bridge before porting features. The first implementation milestone is a minimal main-world bridge spike that captures SCALE request headers and calls `GetSessionInfo` on `/UserAction/ExecProc`.
-2. Keep privileged code narrow. Background code handles extension lifecycle and configuration; it should not own SCALE API calls unless a documented spike proves that model reliable.
+1. Keep the bridge as the proven path for authenticated SCALE calls. The main-world bridge captures SCALE request headers and calls `/UserAction/ExecProc` from the page runtime.
+2. Keep privileged code narrow. Background code handles extension lifecycle and configuration; it should not own SCALE API calls unless a documented design change proves that model reliable.
 3. Use typed contracts at boundaries. Messages and settings must go through shared schemas or shared TypeScript types.
 4. Keep host permissions tight. Do not add broad host permissions without a written reason in the PR.
 5. Tests before features. Every behavior change lands with regression coverage in the same PR.
@@ -37,7 +37,7 @@ The old desktop launcher repository is a reference implementation for behavior a
 - MV3 only.
 - No dynamic remote code loading.
 - No real production hostnames, secrets, access codes, or customer-specific URLs in source control.
-- Do not make SCALE API calls from the background service worker unless a documented spike proves that it is safe and reliable.
+- Do not make SCALE API calls from the background service worker unless a documented design change proves that it is safe and reliable.
 - All authenticated SCALE API calls must route through one shared bridge API module.
 - Do not duplicate request/header capture logic per feature.
 - Use Chrome-supported main-world execution (`world: "MAIN"` or `chrome.scripting` with `world: "MAIN"`). Do not inject ad hoc script tags to bypass extension isolation.
@@ -67,7 +67,6 @@ packages/shared
 docs
   architecture.md       # runtime model and ownership boundaries
   bridge-contract.md    # bridge/content protocol and security notes
-  migration-map.md      # old reference files mapped to new modules
   testing.md            # required local and CI verification
 ```
 
@@ -90,8 +89,6 @@ docs
 3. Keep authenticated SCALE calls in `apps/extension/src/bridge/`.
 4. Keep DOM placement and UI in `apps/extension/src/content/` or `apps/extension/src/features/`.
 5. Add Playwright coverage when the feature depends on real extension wiring or page lifecycle timing.
-6. Update `docs/migration-map.md` when porting behavior from the old reference repository.
-
 ## Commit And PR Conventions
 
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs:`, `refactor:`).

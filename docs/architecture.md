@@ -12,7 +12,7 @@ The background service worker owns extension lifecycle work:
 - diagnostics and feature availability
 - optional extension action behavior
 
-It does not own authenticated SCALE API calls. Those calls originate from the page runtime through the bridge unless a documented spike proves a background-originated model is reliable.
+It does not own authenticated SCALE API calls. Those calls originate from the page runtime through the bridge unless a documented design change proves a background-originated model is reliable.
 
 ## Isolated Content Scripts
 

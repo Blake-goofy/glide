@@ -35,4 +35,4 @@ Use Playwright for lifecycle behavior that cannot be proven with unit tests:
 - fixture SCALE pages that make authenticated requests
 - feature UI placement on representative SCALE shells
 
-The E2E harness exists early, but the CI gate may start with unit tests and build validation until the bridge spike is stable.
+The E2E harness supplements the unit and build checks for cases that need full extension wiring or browser lifecycle coverage.
