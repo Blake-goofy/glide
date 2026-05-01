@@ -512,7 +512,7 @@ export function installSessionStrip(doc: Document = document): () => void {
     }
 
     for (const target of nextTargets) {
-      applyOffsetTarget(target, offsetHeight);
+      applyOffsetTarget(target);
     }
 
     offsetTargets = nextTargets;
