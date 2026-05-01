@@ -6,6 +6,7 @@ import {
   type GlideBridgeMessage,
   type GlideContentMessage,
   type ScaleRequestContext,
+  type UserActionProcedureName,
   type UserActionResponse,
 } from '@blakebecker/glide-shared';
 
@@ -57,9 +58,10 @@ function postToContent(message: GlideBridgeMessage): void {
   window.dispatchEvent(new CustomEvent(glideProtocol.bridgeToContentEvent, { detail: message }));
 }
 
-async function callUserAction(action: 'GetSessionInfo', changeValue = 'INIT'): Promise<UserActionResponse> {
+async function callUserAction(action: UserActionProcedureName, changeValue = 'INIT', internalId = getMachineName() || 'INIT'): Promise<UserActionResponse> {
   const url = new URL('/UserAction/ExecProc', window.location.origin);
   url.searchParams.set('action', action);
+  url.searchParams.set('internalID', internalId);
   url.searchParams.set('changeValue', changeValue);
 
   const response = await window.fetch(url.toString(), {
@@ -96,6 +98,17 @@ async function handleContentMessage(message: GlideContentMessage): Promise<void>
         source: glideProtocol.sourceBridge,
         type: 'glide.getSessionInfo.result',
       });
+      return;
+    }
+
+    if (message.type === 'glide.userAction') {
+      postToContent({
+        id: message.id,
+        ok: true,
+        payload: await callUserAction(message.payload.action, message.payload.changeValue, message.payload.internalId),
+        source: glideProtocol.sourceBridge,
+        type: 'glide.userAction.result',
+      });
     }
   } catch (error) {
     postToContent({
@@ -105,6 +118,14 @@ async function handleContentMessage(message: GlideContentMessage): Promise<void>
       source: glideProtocol.sourceBridge,
       type: 'glide.error',
     });
+  }
+}
+
+function getMachineName(): string {
+  try {
+    return window.localStorage.getItem('MachineName')?.trim() ?? '';
+  } catch {
+    return '';
   }
 }
 

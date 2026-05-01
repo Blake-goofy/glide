@@ -1,6 +1,7 @@
 import { createMessageId, glideProtocol, type GlideBridgeMessage, type GlideContentMessage } from '@blakebecker/glide-shared';
 
 import { handleGlideSettingsBridgeMessage, initGlideSettingsUi } from '../features/glide-settings';
+import { initPageEnhancements } from '../features/page-enhancements';
 
 declare global {
   interface Window {
@@ -37,6 +38,7 @@ if (!window.__glideContentLoaded) {
   window.addEventListener(glideProtocol.bridgeToContentEvent, handleBridgeMessage);
   window.addEventListener(glideProtocol.bridgeReadyEvent, requestInitialContext, { once: true });
   initGlideSettingsUi();
+  initPageEnhancements();
   document.documentElement.dataset.glideContentLoaded = 'true';
 }
 
