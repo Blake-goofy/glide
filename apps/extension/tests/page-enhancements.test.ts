@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { glideProtocol, type GlideBridgeMessage } from '@blakebecker/glide-shared';
+import { glideProtocol, type GlideBridgeMessage, type GlideContentMessage } from '@blakebecker/glide-shared';
 
 import { installAdfsOverlayKeyboard } from '../src/features/adfs-overlay-keyboard';
 import { installClickableRows } from '../src/features/clickable-rows';
 import { installDarkModeBackgroundFix } from '../src/features/dark-mode-background-fix';
+import { installGridCopy } from '../src/features/grid-copy';
 import { installSessionStrip } from '../src/features/session-strip';
 import { installUnitsInToteNumpad } from '../src/features/units-in-tote-numpad';
 
@@ -15,6 +16,10 @@ describe('page enhancements', () => {
     document.body.innerHTML = '';
     localStorage.clear();
     window.history.replaceState({}, '', 'http://localhost/scale/trans/ex22slotstaxpalletbuild');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('copies the first LP table column into the pallet input when a row is clicked', () => {
@@ -41,6 +46,139 @@ describe('page enhancements', () => {
     document.querySelector<HTMLButtonElement>('.glide-units-in-tote-numpad__key[data-value="7"]')?.click();
 
     expect(document.querySelector<HTMLInputElement>('#UnitsInTote input')?.value).toBe('7');
+
+    cleanup();
+  });
+
+  it('copies a supported grid cell immediately on middle click and uses a bridge toast', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const toastMessages = stubBridgeToasts();
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    document.body.innerHTML = `
+      <table class="ui-iggrid-table">
+        <tbody>
+          <tr>
+            <td>LP-1001</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const cleanup = installGridCopy();
+    const cell = document.querySelector('td') as HTMLTableCellElement;
+    const event = new MouseEvent('auxclick', { bubbles: true, button: 1, cancelable: true });
+
+    cell.dispatchEvent(event);
+    await flushMicrotasks();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(writeText).toHaveBeenCalledWith('LP-1001');
+    expect(toastMessages).toEqual([
+      {
+        kind: 'success',
+        message: 'Copied to clipboard.',
+      },
+    ]);
+
+    cleanup();
+  });
+
+  it('shows a copy menu for right click and copies link cell text without navigating', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const toastMessages = stubBridgeToasts();
+    const linkClick = vi.fn((event: Event) => {
+      event.preventDefault();
+    });
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    document.body.innerHTML = `
+      <table id="ListPaneDataGrid_headers" class="ui-iggrid-headertable">
+        <tbody>
+          <tr>
+            <td><a href="/scale/item/123">Tracking 123</a></td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const cleanup = installGridCopy();
+    const link = document.querySelector('a') as HTMLAnchorElement;
+    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, button: 2, cancelable: true, clientX: 32, clientY: 48 });
+
+    link.addEventListener('click', linkClick);
+    link.dispatchEvent(contextEvent);
+
+    expect(contextEvent.defaultPrevented).toBe(true);
+    expect(document.getElementById('glide-grid-copy-menu')).not.toBeNull();
+    expect(linkClick).not.toHaveBeenCalled();
+
+    document
+      .querySelector<HTMLButtonElement>('[data-glide-grid-copy-action="copy"]')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    await flushMicrotasks();
+
+    expect(writeText).toHaveBeenCalledWith('Tracking 123');
+    expect(toastMessages).toEqual([
+      {
+        kind: 'success',
+        message: 'Copied to clipboard.',
+      },
+    ]);
+
+    cleanup();
+  });
+
+  it('copies a single space on touch long press instead of dropping whitespace-only cells', async () => {
+    vi.useFakeTimers();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const toastMessages = stubBridgeToasts();
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    document.body.innerHTML = `
+      <table class="ui-iggrid-table">
+        <tbody>
+          <tr>
+            <td>&nbsp;</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const cleanup = installGridCopy();
+    const cell = document.querySelector('td') as HTMLTableCellElement;
+
+    dispatchPointerEvent(cell, 'pointerdown', { clientX: 20, clientY: 24, pointerId: 7, pointerType: 'touch' });
+    await vi.advanceTimersByTimeAsync(550);
+    await flushMicrotasks();
+
+    expect(writeText).toHaveBeenCalledWith(' ');
+    expect(toastMessages).toEqual([
+      {
+        kind: 'success',
+        message: 'Copied to clipboard.',
+      },
+    ]);
 
     cleanup();
   });
@@ -313,4 +451,45 @@ function pressPointerKey(selector: string): void {
 
   key?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
   key?.dispatchEvent(new Event('pointerup', { bubbles: true }));
+}
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+function dispatchPointerEvent(target: Element, type: string, properties: Record<string, unknown>): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+
+  Object.assign(event, properties);
+  target.dispatchEvent(event);
+}
+
+function stubBridgeToasts(): Array<{ kind: string; message: string }> {
+  const messages: Array<{ kind: string; message: string }> = [];
+
+  window.addEventListener(glideProtocol.contentToBridgeEvent, handleBridgeMessage);
+
+  function handleBridgeMessage(event: Event): void {
+    const detail = (event as CustomEvent<GlideContentMessage>).detail;
+
+    if (!detail || detail.type !== 'glide.toast') {
+      return;
+    }
+
+    messages.push(detail.payload);
+    window.dispatchEvent(
+      new CustomEvent(glideProtocol.bridgeToContentEvent, {
+        detail: {
+          id: detail.id,
+          ok: true,
+          payload: { shown: true },
+          source: glideProtocol.sourceBridge,
+          type: 'glide.toast.result',
+        } satisfies GlideBridgeMessage,
+      }),
+    );
+  }
+
+  return messages;
 }

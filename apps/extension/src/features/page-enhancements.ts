@@ -3,16 +3,18 @@ import { installAdfsOverlayKeyboard } from './adfs-overlay-keyboard';
 import { installClickableRows } from './clickable-rows';
 import { installDarkModeBackgroundFix } from './dark-mode-background-fix';
 import { getCurrentGlideSettings, onGlideSettingsChanged, type GlideSettingsState } from './glide-settings';
+import { installGridCopy } from './grid-copy';
 import { installSessionStrip } from './session-strip';
 import { installUnitsInToteNumpad } from './units-in-tote-numpad';
 
-type InstallableFeatureName = 'adfsKeyboard' | 'arriveAllTotes' | 'clickableRows' | 'darkModeBackgroundFix' | 'sessionStrip' | 'unitsInToteNumpad';
+type InstallableFeatureName = 'adfsKeyboard' | 'arriveAllTotes' | 'clickableRows' | 'darkModeBackgroundFix' | 'gridCopy' | 'sessionStrip' | 'unitsInToteNumpad';
 
 const featureInstallers: Record<InstallableFeatureName, () => () => void> = {
   adfsKeyboard: installAdfsOverlayKeyboard,
   arriveAllTotes: installArriveAllTotes,
   clickableRows: installClickableRows,
   darkModeBackgroundFix: installDarkModeBackgroundFix,
+  gridCopy: installGridCopy,
   sessionStrip: installSessionStrip,
   unitsInToteNumpad: installUnitsInToteNumpad,
 };

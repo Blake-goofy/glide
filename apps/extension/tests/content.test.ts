@@ -102,6 +102,7 @@ describe('isolated content script', () => {
     expect((document.getElementById('GlideSettingsFeature-sessionStrip') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-arriveAllTotes') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-clickableRows') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('GlideSettingsFeature-gridCopy') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-unitsInToteNumpad') as HTMLInputElement).checked).toBe(true);
   });
 
@@ -115,6 +116,7 @@ describe('isolated content script', () => {
             arriveAllTotes: true,
             clickableRows: true,
             darkModeBackgroundFix: true,
+            gridCopy: true,
             sessionStrip: true,
             unitsInToteNumpad: true,
           },
@@ -191,6 +193,7 @@ describe('isolated content script', () => {
             arriveAllTotes: true,
             clickableRows: true,
             darkModeBackgroundFix: false,
+            gridCopy: true,
             sessionStrip: false,
             unitsInToteNumpad: false,
           },
@@ -237,6 +240,7 @@ describe('isolated content script', () => {
     const sessionStripCheckbox = document.getElementById('GlideSettingsFeature-sessionStrip');
     const arriveAllTotesCheckbox = document.getElementById('GlideSettingsFeature-arriveAllTotes');
     const clickableRowsCheckbox = document.getElementById('GlideSettingsFeature-clickableRows');
+    const gridCopyCheckbox = document.getElementById('GlideSettingsFeature-gridCopy');
     const unitsInToteNumpadCheckbox = document.getElementById('GlideSettingsFeature-unitsInToteNumpad');
 
     expect(modal?.classList.contains('show')).toBe(true);
@@ -252,6 +256,7 @@ describe('isolated content script', () => {
     expect((sessionStripCheckbox as HTMLInputElement).checked).toBe(false);
     expect((arriveAllTotesCheckbox as HTMLInputElement).checked).toBe(true);
     expect((clickableRowsCheckbox as HTMLInputElement).checked).toBe(true);
+    expect((gridCopyCheckbox as HTMLInputElement).checked).toBe(true);
     expect((unitsInToteNumpadCheckbox as HTMLInputElement).checked).toBe(false);
 
   (adfsKeyboardCheckbox as HTMLInputElement).checked = false;
@@ -259,6 +264,7 @@ describe('isolated content script', () => {
     (sessionStripCheckbox as HTMLInputElement).checked = true;
     (arriveAllTotesCheckbox as HTMLInputElement).checked = false;
     (clickableRowsCheckbox as HTMLInputElement).checked = true;
+    (gridCopyCheckbox as HTMLInputElement).checked = false;
     (unitsInToteNumpadCheckbox as HTMLInputElement).checked = true;
 
     document.getElementById('GlideSettingsSaveButton')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -274,6 +280,7 @@ describe('isolated content script', () => {
             arriveAllTotes: false,
             clickableRows: true,
             darkModeBackgroundFix: true,
+            gridCopy: false,
             sessionStrip: true,
             unitsInToteNumpad: true,
           },
@@ -294,6 +301,7 @@ describe('isolated content script', () => {
             arriveAllTotes: false,
             clickableRows: false,
             darkModeBackgroundFix: false,
+            gridCopy: false,
             sessionStrip: false,
             unitsInToteNumpad: false,
           },
@@ -341,6 +349,7 @@ describe('isolated content script', () => {
     expect((document.getElementById('GlideSettingsFeature-sessionStrip') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-arriveAllTotes') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-clickableRows') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('GlideSettingsFeature-gridCopy') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-unitsInToteNumpad') as HTMLInputElement).checked).toBe(true);
 
     expect(storageSet).toHaveBeenCalledWith(
@@ -352,6 +361,7 @@ describe('isolated content script', () => {
             arriveAllTotes: true,
             clickableRows: true,
             darkModeBackgroundFix: true,
+            gridCopy: true,
             sessionStrip: true,
             unitsInToteNumpad: true,
           },

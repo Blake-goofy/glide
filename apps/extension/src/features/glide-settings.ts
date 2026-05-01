@@ -14,7 +14,7 @@ const modalOpenClassName = 'glide-settings-modal-open';
 const scaleResetModalId = 'ResetSettingsModalDialog';
 const settingsChangedEventName = 'glide:settings-changed';
 
-export type GlideSettingsFeatureName = 'sessionStrip' | 'arriveAllTotes' | 'clickableRows' | 'unitsInToteNumpad' | 'adfsKeyboard' | 'darkModeBackgroundFix';
+export type GlideSettingsFeatureName = 'sessionStrip' | 'arriveAllTotes' | 'clickableRows' | 'unitsInToteNumpad' | 'adfsKeyboard' | 'darkModeBackgroundFix' | 'gridCopy';
 
 export type GlideSettingsState = Record<GlideSettingsFeatureName, boolean>;
 
@@ -54,6 +54,10 @@ const featureDefinitions: readonly GlideSettingsFeatureDefinition[] = [
   {
     label: 'Dark Mode Background Fix',
     name: 'darkModeBackgroundFix',
+  },
+  {
+    label: 'Grid Copy',
+    name: 'gridCopy',
   },
 ] as const;
 
@@ -413,6 +417,7 @@ function getDefaultSettingsState(machineName: string): GlideSettingsState {
     arriveAllTotes: true,
     clickableRows: true,
     darkModeBackgroundFix: true,
+    gridCopy: true,
     sessionStrip: true,
     unitsInToteNumpad: true,
   };
