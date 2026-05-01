@@ -1,4 +1,13 @@
-const scalePageMatches = ['http://localhost/*', 'https://localhost/*'];
+const scalePageMatches = [
+  'http://*/scale/*',
+  'https://*/scale/*',
+  'http://*/adfs/*',
+  'https://*/adfs/*',
+  'http://*/WarehouseMobile*',
+  'https://*/WarehouseMobile*',
+  'http://*/warehousemobile*',
+  'https://*/warehousemobile*',
+];
 const extensionIcons = {
   16: 'icons/glide.png',
   32: 'icons/glide.png',
@@ -23,13 +32,13 @@ const manifest = {
   permissions: ['storage'],
   content_scripts: [
     {
-      matches: ['http://*/scale/*', 'https://*/scale/*'],
+      matches: scalePageMatches,
       js: ['src/bridge/index.ts'],
       run_at: 'document_start',
       world: 'MAIN',
     },
     {
-      matches: ['http://*/scale/*', 'https://*/scale/*'],
+      matches: scalePageMatches,
       js: ['src/content/index.ts'],
       run_at: 'document_start',
     },

@@ -22,8 +22,19 @@ describe('extension manifest', () => {
   });
 
   it('matches SCALE pages without hardcoding environment hostnames', () => {
-    expect(manifest.content_scripts?.[0]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*']);
-    expect(manifest.content_scripts?.[1]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*']);
+    const expectedMatches = [
+      'http://*/scale/*',
+      'https://*/scale/*',
+      'http://*/adfs/*',
+      'https://*/adfs/*',
+      'http://*/WarehouseMobile*',
+      'https://*/WarehouseMobile*',
+      'http://*/warehousemobile*',
+      'https://*/warehousemobile*',
+    ];
+
+    expect(manifest.content_scripts?.[0]?.matches).toEqual(expectedMatches);
+    expect(manifest.content_scripts?.[1]?.matches).toEqual(expectedMatches);
   });
   it('loads bridge in the main world before the isolated content script', () => {
     expect(manifest.content_scripts?.[0]).toMatchObject({

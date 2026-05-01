@@ -13,8 +13,8 @@ test('built extension manifest keeps GLIDE architecture boundaries', async () =>
   expect(manifest.icons).toMatchObject({ '16': 'icons/glide.png', '128': 'icons/glide.png' });
   expect(manifest.action?.default_icon).toMatchObject({ '16': 'icons/glide.png', '128': 'icons/glide.png' });
   expect(manifest.permissions).toEqual(['storage']);
-  expect(manifest.content_scripts?.[0]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*']);
-  expect(manifest.content_scripts?.[1]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*']);
+  expect(manifest.content_scripts?.[0]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*', 'http://*/adfs/*', 'https://*/adfs/*']);
+  expect(manifest.content_scripts?.[1]?.matches).toEqual(['http://*/scale/*', 'https://*/scale/*', 'http://*/adfs/*', 'https://*/adfs/*']);
   expect(manifest.content_scripts?.[0]).toMatchObject({ run_at: 'document_start', world: 'MAIN' });
   expect(manifest.content_scripts?.[1]).toMatchObject({ run_at: 'document_start' });
   await expect(access(join(process.cwd(), 'dist', 'icons', 'glide.png'))).resolves.toBeUndefined();

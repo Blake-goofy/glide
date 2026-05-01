@@ -36,7 +36,7 @@ describe('isolated content script', () => {
     document.documentElement.dataset.glideContentLoaded = '';
     localStorage.clear();
     delete window.__glideContentLoaded;
-    delete (globalThis as typeof globalThis & { chrome?: ChromeStorageMock }).chrome;
+    delete (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome;
   });
 
   it('marks the page when loaded and records bridge message status', async () => {
@@ -78,7 +78,7 @@ describe('isolated content script', () => {
       callback?.();
     });
 
-    (globalThis as typeof globalThis & { chrome?: ChromeStorageMock }).chrome = {
+    (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome = {
       runtime: {},
       storage: {
         local: {
@@ -98,10 +98,87 @@ describe('isolated content script', () => {
     await flushMicrotasks();
 
     expect((document.getElementById('GlideSettingsFeature-adfsKeyboard') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('GlideSettingsFeature-darkModeBackgroundFix') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-sessionStrip') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-arriveAllTotes') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-clickableRows') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-unitsInToteNumpad') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('reuses the last persisted machine settings when the current page has no machine name', async () => {
+    const storageGet = vi.fn((_key: string, callback: (items: Record<string, unknown>) => void) => {
+      callback({
+        glideSettings: {
+          machineName: 'SlotStax Station 1',
+          settings: {
+            adfsKeyboard: true,
+            arriveAllTotes: true,
+            clickableRows: true,
+            darkModeBackgroundFix: true,
+            sessionStrip: true,
+            unitsInToteNumpad: true,
+          },
+        },
+      });
+    });
+    const storageSet = vi.fn((_items: Record<string, unknown>, callback?: () => void) => {
+      callback?.();
+    });
+
+    (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome = {
+      runtime: {},
+      storage: {
+        local: {
+          get: storageGet,
+          set: storageSet,
+        },
+      },
+    };
+
+    document.body.innerHTML = userMenuMarkup;
+
+    await import('../src/content/index');
+    await flushMicrotasks();
+
+    document.getElementById('GlideSettingsMenuItem')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect((document.getElementById('GlideSettingsFeature-adfsKeyboard') as HTMLInputElement).checked).toBe(true);
+    expect(storageSet).not.toHaveBeenCalled();
+  });
+
+  it('shows the ADFS keyboard on a fresh install before any machine context exists', async () => {
+    const storageGet = vi.fn((_key: string, callback: (items: Record<string, unknown>) => void) => {
+      callback({});
+    });
+    const storageSet = vi.fn((_items: Record<string, unknown>, callback?: () => void) => {
+      callback?.();
+    });
+
+    (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome = {
+      runtime: {},
+      storage: {
+        local: {
+          get: storageGet,
+          set: storageSet,
+        },
+      },
+    };
+
+    window.history.replaceState({}, '', 'http://localhost/adfs/oauth2/authorize');
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    await import('../src/content/index');
+    await flushMicrotasks();
+
+    expect(document.querySelector('.glide-adfs-keyboard')).not.toBeNull();
+    expect(storageSet).not.toHaveBeenCalled();
   });
 
   it('loads and saves stub Glide feature settings through extension storage', async () => {
@@ -113,6 +190,7 @@ describe('isolated content script', () => {
             adfsKeyboard: true,
             arriveAllTotes: true,
             clickableRows: true,
+            darkModeBackgroundFix: false,
             sessionStrip: false,
             unitsInToteNumpad: false,
           },
@@ -123,7 +201,7 @@ describe('isolated content script', () => {
       callback?.();
     });
 
-    (globalThis as typeof globalThis & { chrome?: ChromeStorageMock }).chrome = {
+    (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome = {
       runtime: {},
       storage: {
         local: {
@@ -155,6 +233,7 @@ describe('isolated content script', () => {
 
     const modal = document.getElementById('GlideSettingsModalDialog');
     const adfsKeyboardCheckbox = document.getElementById('GlideSettingsFeature-adfsKeyboard');
+    const darkModeBackgroundFixCheckbox = document.getElementById('GlideSettingsFeature-darkModeBackgroundFix');
     const sessionStripCheckbox = document.getElementById('GlideSettingsFeature-sessionStrip');
     const arriveAllTotesCheckbox = document.getElementById('GlideSettingsFeature-arriveAllTotes');
     const clickableRowsCheckbox = document.getElementById('GlideSettingsFeature-clickableRows');
@@ -162,18 +241,21 @@ describe('isolated content script', () => {
 
     expect(modal?.classList.contains('show')).toBe(true);
   expect(adfsKeyboardCheckbox).toBeInstanceOf(HTMLInputElement);
+    expect(darkModeBackgroundFixCheckbox).toBeInstanceOf(HTMLInputElement);
     expect(sessionStripCheckbox).toBeInstanceOf(HTMLInputElement);
     expect(arriveAllTotesCheckbox).toBeInstanceOf(HTMLInputElement);
     expect(clickableRowsCheckbox).toBeInstanceOf(HTMLInputElement);
     expect(unitsInToteNumpadCheckbox).toBeInstanceOf(HTMLInputElement);
 
   expect((adfsKeyboardCheckbox as HTMLInputElement).checked).toBe(true);
+    expect((darkModeBackgroundFixCheckbox as HTMLInputElement).checked).toBe(false);
     expect((sessionStripCheckbox as HTMLInputElement).checked).toBe(false);
     expect((arriveAllTotesCheckbox as HTMLInputElement).checked).toBe(true);
     expect((clickableRowsCheckbox as HTMLInputElement).checked).toBe(true);
     expect((unitsInToteNumpadCheckbox as HTMLInputElement).checked).toBe(false);
 
   (adfsKeyboardCheckbox as HTMLInputElement).checked = false;
+    (darkModeBackgroundFixCheckbox as HTMLInputElement).checked = true;
     (sessionStripCheckbox as HTMLInputElement).checked = true;
     (arriveAllTotesCheckbox as HTMLInputElement).checked = false;
     (clickableRowsCheckbox as HTMLInputElement).checked = true;
@@ -191,6 +273,7 @@ describe('isolated content script', () => {
             adfsKeyboard: false,
             arriveAllTotes: false,
             clickableRows: true,
+            darkModeBackgroundFix: true,
             sessionStrip: true,
             unitsInToteNumpad: true,
           },
@@ -210,6 +293,7 @@ describe('isolated content script', () => {
             adfsKeyboard: false,
             arriveAllTotes: false,
             clickableRows: false,
+            darkModeBackgroundFix: false,
             sessionStrip: false,
             unitsInToteNumpad: false,
           },
@@ -220,7 +304,7 @@ describe('isolated content script', () => {
       callback?.();
     });
 
-    (globalThis as typeof globalThis & { chrome?: ChromeStorageMock }).chrome = {
+    (globalThis as unknown as { chrome?: ChromeStorageMock }).chrome = {
       runtime: {},
       storage: {
         local: {
@@ -253,6 +337,7 @@ describe('isolated content script', () => {
     await flushMicrotasks();
 
     expect((document.getElementById('GlideSettingsFeature-adfsKeyboard') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('GlideSettingsFeature-darkModeBackgroundFix') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-sessionStrip') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-arriveAllTotes') as HTMLInputElement).checked).toBe(true);
     expect((document.getElementById('GlideSettingsFeature-clickableRows') as HTMLInputElement).checked).toBe(true);
@@ -266,6 +351,7 @@ describe('isolated content script', () => {
             adfsKeyboard: true,
             arriveAllTotes: true,
             clickableRows: true,
+            darkModeBackgroundFix: true,
             sessionStrip: true,
             unitsInToteNumpad: true,
           },
