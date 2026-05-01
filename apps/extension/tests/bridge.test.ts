@@ -114,4 +114,44 @@ describe('main-world bridge', () => {
     expect(sessionCall?.[1]).toMatchObject({ credentials: 'include', method: 'GET' });
     expect(new Headers(sessionCall?.[1]?.headers).get('authorization')).toBe('Bearer token');
   });
+
+  it('uses the page toastr API for bridge toast messages', async () => {
+    const success = vi.fn();
+    window.toastr = {
+      options: {},
+      success,
+    };
+
+    await loadBridge();
+
+    const messagePromise = nextBridgeMessage();
+    window.dispatchEvent(
+      new CustomEvent(glideProtocol.contentToBridgeEvent, {
+        detail: {
+          id: 'toast-1',
+          payload: {
+            kind: 'success',
+            message: 'Totes marked as arrived.',
+          },
+          source: glideProtocol.sourceContent,
+          type: 'glide.toast',
+        },
+      }),
+    );
+
+    await expect(messagePromise).resolves.toMatchObject({
+      id: 'toast-1',
+      ok: true,
+      payload: {
+        shown: true,
+      },
+      type: 'glide.toast.result',
+    });
+
+    expect(success).toHaveBeenCalledWith('Totes marked as arrived.');
+    expect(window.toastr?.options).toMatchObject({
+      closeButton: true,
+      positionClass: 'toast-top-center',
+    });
+  });
 });

@@ -30,6 +30,9 @@ const manifest = {
     type: 'module',
   },
   permissions: ['storage'],
+  storage: {
+    managed_schema: 'managed-policy.schema.json',
+  },
   content_scripts: [
     {
       matches: scalePageMatches,

@@ -48,4 +48,11 @@ describe('extension manifest', () => {
       run_at: 'document_start',
     });
   });
+
+  it('declares a managed policy schema for extension-managed settings', () => {
+    expect(manifest.permissions).toContain('storage');
+    expect(manifest.storage).toEqual({
+      managed_schema: 'managed-policy.schema.json',
+    });
+  });
 });

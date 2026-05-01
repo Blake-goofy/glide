@@ -13,6 +13,11 @@ import {
 declare global {
   interface Window {
     __glideBridgeLoaded?: boolean;
+    toastr?: {
+      error?: (...args: unknown[]) => void;
+      options?: Record<string, unknown>;
+      success?: (...args: unknown[]) => void;
+    };
   }
 
   interface XMLHttpRequest {
@@ -21,6 +26,7 @@ declare global {
 }
 
 const requestContext: ScaleRequestContext = {};
+const toastStyleId = 'glide-toast-style';
 
 function captureHeader(name: string, value: string): void {
   const normalizedName = normalizeScaleHeaderName(name);
@@ -109,6 +115,19 @@ async function handleContentMessage(message: GlideContentMessage): Promise<void>
         source: glideProtocol.sourceBridge,
         type: 'glide.userAction.result',
       });
+      return;
+    }
+
+    if (message.type === 'glide.toast') {
+      postToContent({
+        id: message.id,
+        ok: true,
+        payload: {
+          shown: showScaleToast(message.payload.message, message.payload.kind),
+        },
+        source: glideProtocol.sourceBridge,
+        type: 'glide.toast.result',
+      });
     }
   } catch (error) {
     postToContent({
@@ -119,6 +138,54 @@ async function handleContentMessage(message: GlideContentMessage): Promise<void>
       type: 'glide.error',
     });
   }
+}
+
+function showScaleToast(message: string, kind: 'error' | 'success'): boolean {
+  const toastKind = kind === 'error' ? 'error' : 'success';
+  const toastr = window.toastr;
+  const method = toastKind === 'error' ? toastr?.error : toastr?.success;
+
+  if (!message || typeof method !== 'function' || !toastr) {
+    return false;
+  }
+
+  ensureToastrStyles();
+  toastr.options = {
+    ...toastr.options,
+    closeButton: true,
+    extendedTimeOut: toastr.options?.extendedTimeOut ?? 1000,
+    newestOnTop: true,
+    positionClass: 'toast-top-center',
+    preventDuplicates: false,
+    timeOut: toastr.options?.timeOut ?? 5000,
+  };
+  method.call(toastr, message);
+  return true;
+}
+
+function ensureToastrStyles(): void {
+  if (document.getElementById(toastStyleId)) {
+    return;
+  }
+
+  const style = document.createElement('style');
+  style.id = toastStyleId;
+  style.textContent = `
+    #toast-container.toast-top-center {
+      left: 50% !important;
+      right: auto !important;
+      top: 16px !important;
+      transform: translateX(-50%) !important;
+      width: min(560px, calc(100vw - 32px)) !important;
+    }
+    #toast-container.toast-top-center > .toast {
+      box-sizing: border-box !important;
+      margin: 0 0 8px 0 !important;
+      text-align: left !important;
+      width: 100% !important;
+    }
+  `;
+  document.head.append(style);
 }
 
 function getMachineName(): string {

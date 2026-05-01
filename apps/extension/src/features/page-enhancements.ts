@@ -1,3 +1,4 @@
+import { installArriveAllTotes } from './arrive-all-totes';
 import { installAdfsOverlayKeyboard } from './adfs-overlay-keyboard';
 import { installClickableRows } from './clickable-rows';
 import { installDarkModeBackgroundFix } from './dark-mode-background-fix';
@@ -5,10 +6,11 @@ import { getCurrentGlideSettings, onGlideSettingsChanged, type GlideSettingsStat
 import { installSessionStrip } from './session-strip';
 import { installUnitsInToteNumpad } from './units-in-tote-numpad';
 
-type InstallableFeatureName = 'adfsKeyboard' | 'clickableRows' | 'darkModeBackgroundFix' | 'sessionStrip' | 'unitsInToteNumpad';
+type InstallableFeatureName = 'adfsKeyboard' | 'arriveAllTotes' | 'clickableRows' | 'darkModeBackgroundFix' | 'sessionStrip' | 'unitsInToteNumpad';
 
 const featureInstallers: Record<InstallableFeatureName, () => () => void> = {
   adfsKeyboard: installAdfsOverlayKeyboard,
+  arriveAllTotes: installArriveAllTotes,
   clickableRows: installClickableRows,
   darkModeBackgroundFix: installDarkModeBackgroundFix,
   sessionStrip: installSessionStrip,

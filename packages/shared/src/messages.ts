@@ -31,6 +31,15 @@ export type GlideContentMessage =
         changeValue?: string;
         internalId?: string;
       };
+    }
+  | {
+      id: string;
+      source: typeof glideProtocol.sourceContent;
+      type: 'glide.toast';
+      payload: {
+        kind: 'error' | 'success';
+        message: string;
+      };
     };
 
 export type GlideBridgeMessage =
@@ -54,6 +63,15 @@ export type GlideBridgeMessage =
       source: typeof glideProtocol.sourceBridge;
       type: 'glide.userAction.result';
       payload: UserActionResponse;
+    }
+  | {
+      id: string;
+      ok: true;
+      source: typeof glideProtocol.sourceBridge;
+      type: 'glide.toast.result';
+      payload: {
+        shown: boolean;
+      };
     }
   | {
       id: string;

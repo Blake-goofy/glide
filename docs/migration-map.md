@@ -7,7 +7,7 @@ The old desktop launcher repository remains a reference for behavior while GLIDE
 | Old reference | GLIDE destination |
 | --- | --- |
 | `apps/launcher/src/page-enhancements/session-strip.ts` | `apps/extension/src/features/session-strip/` plus bridge API helpers |
-| `userscripts/arrive-all-totes.user.js` | `apps/extension/src/features/arrive-all-totes/` plus bridge API helpers |
+| `userscripts/arrive-all-totes.user.js` | `apps/extension/src/features/arrive-all-totes.ts` plus `apps/extension/tests/arrive-all-totes.test.ts` |
 | `apps/launcher/src/lib/session-strip.test.ts` | `apps/extension/tests/session-strip.test.ts` |
 | `apps/launcher/src/lib/arrive-all-totes.test.ts` | `apps/extension/tests/arrive-all-totes.test.ts` |
 | `packages/shared` | `packages/shared`, rewritten for extension policy and message contracts |

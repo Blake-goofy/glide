@@ -1,6 +1,7 @@
 import {
   createMessageId,
   glideProtocol,
+  type GlideContentMessage,
   type GlideBridgeMessage,
   type UserActionProcedureName,
   type UserActionResponse,
@@ -8,13 +9,51 @@ import {
 
 const requestTimeoutMs = 5000;
 
+type BridgeRequestMessage =
+  | {
+      type: 'glide.toast';
+      payload: {
+        kind: 'error' | 'success';
+        message: string;
+      };
+    }
+  | {
+      type: 'glide.userAction';
+      payload: {
+        action: UserActionProcedureName;
+        changeValue?: string;
+        internalId?: string;
+      };
+    };
+
 export function callBridgeUserAction(action: UserActionProcedureName, changeValue = 'INIT', internalId?: string): Promise<UserActionResponse> {
+  return sendBridgeRequest<UserActionResponse>({
+    payload: {
+      action,
+      changeValue,
+      ...(internalId ? { internalId } : {}),
+    },
+    type: 'glide.userAction',
+  }, 'glide.userAction');
+}
+
+export function showBridgeToast(message: string, kind: 'error' | 'success'): Promise<boolean> {
+  return sendBridgeRequest<{ shown: boolean }>({
+    payload: {
+      kind,
+      message,
+    },
+    type: 'glide.toast',
+  }, 'glide.toast').then((payload) => payload.shown);
+}
+
+function sendBridgeRequest<TPayload>(message: BridgeRequestMessage, timeoutLabel: BridgeRequestMessage['type']): Promise<TPayload> {
   const id = createMessageId('feature');
 
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
       window.removeEventListener(glideProtocol.bridgeToContentEvent, handleMessage);
-      reject(new Error(`${action} timed out`));
+      reject(new Error(`${timeoutLabel} timed out`));
     }, requestTimeoutMs);
 
     function handleMessage(event: Event): void {
@@ -32,7 +71,7 @@ export function callBridgeUserAction(action: UserActionProcedureName, changeValu
         return;
       }
 
-      resolve(message.payload);
+      resolve(message.payload as TPayload);
     }
 
     window.addEventListener(glideProtocol.bridgeToContentEvent, handleMessage);
@@ -40,13 +79,8 @@ export function callBridgeUserAction(action: UserActionProcedureName, changeValu
       new CustomEvent(glideProtocol.contentToBridgeEvent, {
         detail: {
           id,
-          payload: {
-            action,
-            changeValue,
-            internalId,
-          },
+          ...message,
           source: glideProtocol.sourceContent,
-          type: 'glide.userAction',
         },
       }),
     );
