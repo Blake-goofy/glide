@@ -1,4 +1,4 @@
-import type { ScaleRequestContext, UserActionResponse } from './scale.js';
+import type { ScaleRequestContext, UserActionProcedureName, UserActionResponse } from './scale.js';
 
 export const glideProtocol = {
   bridgeReadyEvent: 'glide:bridge-ready',
@@ -21,6 +21,16 @@ export type GlideContentMessage =
       payload?: {
         changeValue?: string;
       };
+    }
+  | {
+      id: string;
+      source: typeof glideProtocol.sourceContent;
+      type: 'glide.userAction';
+      payload: {
+        action: UserActionProcedureName;
+        changeValue?: string;
+        internalId?: string;
+      };
     };
 
 export type GlideBridgeMessage =
@@ -36,6 +46,13 @@ export type GlideBridgeMessage =
       ok: true;
       source: typeof glideProtocol.sourceBridge;
       type: 'glide.getSessionInfo.result';
+      payload: UserActionResponse;
+    }
+  | {
+      id: string;
+      ok: true;
+      source: typeof glideProtocol.sourceBridge;
+      type: 'glide.userAction.result';
       payload: UserActionResponse;
     }
   | {

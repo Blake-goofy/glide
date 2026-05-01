@@ -12,10 +12,11 @@ const cancelButtonId = 'GlideSettingsCancelButton';
 const closeButtonId = 'GlideSettingsCloseButton';
 const modalOpenClassName = 'glide-settings-modal-open';
 const scaleResetModalId = 'ResetSettingsModalDialog';
+const settingsChangedEventName = 'glide:settings-changed';
 
-type GlideSettingsFeatureName = 'sessionStrip' | 'arriveAllTotes' | 'clickableRows' | 'unitsInToteNumpad' | 'adfsKeyboard';
+export type GlideSettingsFeatureName = 'sessionStrip' | 'arriveAllTotes' | 'clickableRows' | 'unitsInToteNumpad' | 'adfsKeyboard' | 'darkModeBackgroundFix';
 
-type GlideSettingsState = Record<GlideSettingsFeatureName, boolean>;
+export type GlideSettingsState = Record<GlideSettingsFeatureName, boolean>;
 
 type GlideDepartment = 'packing' | 'slotstax' | 'decant' | 'unknown';
 
@@ -50,6 +51,10 @@ const featureDefinitions: readonly GlideSettingsFeatureDefinition[] = [
     label: 'ADFS Keyboard',
     name: 'adfsKeyboard',
   },
+  {
+    label: 'Dark Mode Background Fix',
+    name: 'darkModeBackgroundFix',
+  },
 ] as const;
 
 let settingsObserver: MutationObserver | null = null;
@@ -82,6 +87,19 @@ export function handleGlideSettingsBridgeMessage(message: GlideBridgeMessage): v
   }
 
   latestMachineName = normalizeMachineName(message.payload);
+}
+
+export function getCurrentGlideSettings(): Promise<GlideSettingsState> {
+  return loadSettingsState(getCurrentMachineName());
+}
+
+export function onGlideSettingsChanged(listener: (settingsState: GlideSettingsState) => void): () => void {
+  const handleSettingsChanged = (event: Event): void => {
+    listener((event as CustomEvent<GlideSettingsState>).detail);
+  };
+
+  window.addEventListener(settingsChangedEventName, handleSettingsChanged);
+  return () => window.removeEventListener(settingsChangedEventName, handleSettingsChanged);
 }
 
 function ensureSettingsUi(): void {
@@ -253,10 +271,13 @@ function closeGlideSettingsModal(): void {
 
 async function handleSaveSettings(event: Event): Promise<void> {
   event.preventDefault();
+  const settings = readCheckboxState();
+
   await saveSettingsState({
     machineName: getCurrentMachineName(),
-    settings: readCheckboxState(),
+    settings,
   });
+  dispatchSettingsChanged(settings);
   closeGlideSettingsModal();
 }
 
@@ -309,6 +330,11 @@ async function loadSettingsState(machineName: string): Promise<GlideSettingsStat
       }
 
       const persistedSettings = normalizePersistedSettings(items?.[settingsStorageKey], machineName);
+
+      if (!machineName && persistedSettings.machineName) {
+        resolve(persistedSettings.settings);
+        return;
+      }
 
       if (persistedSettings.machineName !== machineName) {
         void saveSettingsState({
@@ -380,14 +406,22 @@ function getCurrentMachineName(): string {
 
 function getDefaultSettingsState(machineName: string): GlideSettingsState {
   const department = inferDepartmentFromMachineName(machineName);
+  const enableAdfsKeyboardByDefault = department === 'slotstax' || department === 'decant' || isAdfsPageContext();
 
   return {
-    adfsKeyboard: department === 'slotstax' || department === 'decant',
+    adfsKeyboard: enableAdfsKeyboardByDefault,
     arriveAllTotes: true,
     clickableRows: true,
+    darkModeBackgroundFix: true,
     sessionStrip: true,
     unitsInToteNumpad: true,
   };
+}
+
+function isAdfsPageContext(): boolean {
+  const pathname = globalThis.location?.pathname;
+
+  return typeof pathname === 'string' && /^\/adfs(\/|$)/i.test(pathname);
 }
 
 function inferDepartmentFromMachineName(machineName: string): GlideDepartment {
@@ -458,6 +492,10 @@ function parseZIndex(element: Element | null): number {
 
 function getStorageArea(): chrome.storage.LocalStorageArea | undefined {
   return globalThis.chrome?.storage?.local;
+}
+
+function dispatchSettingsChanged(settingsState: GlideSettingsState): void {
+  window.dispatchEvent(new CustomEvent(settingsChangedEventName, { detail: settingsState }));
 }
 
 function buildFallbackModal(activeDocument: Document): HTMLDivElement {
