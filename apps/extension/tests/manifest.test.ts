@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import manifest from '../src/manifest';
 
+function expectScopedHostMatches(matches: string[] | undefined): void {
+  expect(matches).toBeDefined();
+  expect(matches).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/^https:\/\/[^/*]+\/scale\/\*$/),
+      expect.stringMatching(/^https:\/\/[^/*]+\/WarehouseMobile\*$/),
+      expect.stringMatching(/^https:\/\/[^/*]+\/warehousemobile\*$/),
+      expect.stringMatching(/^https:\/\/[^/*]+\/adfs\/\*$/),
+    ]),
+  );
+
+  for (const match of matches ?? []) {
+    expect(match).toMatch(/^https:\/\/[^/*]+\/(?:scale\/\*|adfs\/\*|WarehouseMobile\*|warehousemobile\*)$/);
+  }
+}
+
 describe('extension manifest', () => {
   it('uses GLIDE naming and MV3', () => {
     expect(manifest.manifest_version).toBe(3);
@@ -21,20 +37,12 @@ describe('extension manifest', () => {
     expect(manifest.action?.default_icon).toEqual(expectedIcons);
   });
 
-  it('matches SCALE pages without hardcoding environment hostnames', () => {
-    const expectedMatches = [
-      'http://*/scale/*',
-      'https://*/scale/*',
-      'http://*/adfs/*',
-      'https://*/adfs/*',
-      'http://*/WarehouseMobile*',
-      'https://*/WarehouseMobile*',
-      'http://*/warehousemobile*',
-      'https://*/warehousemobile*',
-    ];
+  it('scopes content scripts to explicit HTTPS hosts and supported app paths', () => {
+    const bridgeMatches = manifest.content_scripts?.[0]?.matches;
+    const contentMatches = manifest.content_scripts?.[1]?.matches;
 
-    expect(manifest.content_scripts?.[0]?.matches).toEqual(expectedMatches);
-    expect(manifest.content_scripts?.[1]?.matches).toEqual(expectedMatches);
+    expectScopedHostMatches(bridgeMatches);
+    expect(contentMatches).toEqual(bridgeMatches);
   });
   it('loads bridge in the main world before the isolated content script', () => {
     expect(manifest.content_scripts?.[0]).toMatchObject({

@@ -9,3 +9,4 @@ test-results/
 *.log
 page-enhancements/
 glide.wiki/
+apps/extension/src/manifest.local.json

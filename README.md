@@ -38,6 +38,10 @@ pnpm build
 
 Use `pnpm check` for the full local gate.
 
+## Local Manifest Override
+
+The checked-in manifest is a public template. To build against real internal hosts, copy `apps/extension/src/manifest.local.example.json` to `apps/extension/src/manifest.local.json` and replace the placeholder match patterns with your deployment hosts. The local override file is gitignored, and builds fall back to the template manifest when it is absent.
+
 ## Load The Extension
 
 1. Run `pnpm build` from the repo root.

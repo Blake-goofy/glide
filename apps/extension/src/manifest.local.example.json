@@ -1,0 +1,8 @@
+{
+  "matches": [
+    "https://scale.example.com/scale/*",
+    "https://scale.example.com/WarehouseMobile*",
+    "https://scale.example.com/warehousemobile*",
+    "https://scaleadfs.example.com/adfs/*"
+  ]
+}
