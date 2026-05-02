@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { crx } from '@crxjs/vite-plugin';
+import { crx, type ManifestV3Export } from '@crxjs/vite-plugin';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import { defineConfig as defineVitestConfig } from 'vitest/config';
@@ -10,7 +10,7 @@ import manifest from './src/manifest';
 
 const manifestOverridePath = resolve(fileURLToPath(new URL('.', import.meta.url)), 'src', 'manifest.local.json');
 
-async function loadManifest(): Promise<chrome.runtime.ManifestV3> {
+async function loadManifest(): Promise<ManifestV3Export> {
   try {
     const overrideSource = await readFile(manifestOverridePath, 'utf8');
     const override = JSON.parse(overrideSource) as { matches?: unknown };
@@ -19,10 +19,10 @@ async function loadManifest(): Promise<chrome.runtime.ManifestV3> {
       throw new Error('apps/extension/src/manifest.local.json must contain a non-empty string array in the matches property.');
     }
 
-    return createManifest(override.matches);
+    return createManifest(override.matches) as ManifestV3Export;
   } catch (error) {
     if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
-      return manifest;
+      return manifest as ManifestV3Export;
     }
 
     throw error;

@@ -5,7 +5,7 @@ const extensionIcons = {
   128: 'icons/glide.png',
 };
 
-export function createManifest(scalePageMatches: string[]): chrome.runtime.ManifestV3 {
+export function createManifest(scalePageMatches: string[]) {
   return {
     manifest_version: 3,
     name: 'GLIDE',
@@ -37,5 +37,5 @@ export function createManifest(scalePageMatches: string[]): chrome.runtime.Manif
         run_at: 'document_start',
       },
     ],
-  } satisfies chrome.runtime.ManifestV3;
+  };
 }
