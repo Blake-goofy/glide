@@ -14,6 +14,8 @@ const leadApprovalInputId = 'GlideArriveAllTotesApprovalCode';
 const leadApprovalErrorId = 'GlideArriveAllTotesApprovalError';
 const leadApprovalStyleId = 'glide-arrive-all-totes-modal-style';
 const modalOpenClassName = 'glide-arrive-all-totes-modal-open';
+const inTransitFieldId = 'EX22PalBuildToteStatusTotesInTransitValue';
+const palletIdFieldId = 'PalletId';
 
 type ActivityOption = {
   defaultActivity: string;
@@ -69,7 +71,14 @@ export function installArriveAllTotes(doc: Document = document): () => void {
   const handleDocumentClick = (event: Event): void => {
     const target = event.target;
 
-    if (!(target instanceof Element)) {
+    if (!isElementNode(doc, target)) {
+      return;
+    }
+
+    const actionsDropdown = target.closest('#EX22PalBuildActionsDropdown');
+
+    if (actionsDropdown instanceof HTMLElement) {
+      syncAction();
       return;
     }
 
@@ -141,14 +150,26 @@ export function installArriveAllTotes(doc: Document = document): () => void {
     }
   };
 
-  doc.addEventListener('click', handleDocumentClick, true);
-  doc.addEventListener('input', queueSync, true);
-  doc.addEventListener('change', queueSync, true);
+  const handleDocumentFieldChange = (event: Event): void => {
+    const target = event.target;
 
-  observer = new MutationObserver(queueSync);
+    if (!isElementNode(doc, target) || !matchesRelevantField(target, inTransitFieldId)) {
+      return;
+    }
+
+    queueSync();
+  };
+
+  doc.addEventListener('click', handleDocumentClick, true);
+  doc.addEventListener('input', handleDocumentFieldChange, true);
+  doc.addEventListener('change', handleDocumentFieldChange, true);
+
+  observer = new MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutationAffectsAction(doc, mutation))) {
+      queueSync();
+    }
+  });
   observer.observe(doc.documentElement, {
-    attributeFilter: ['class', 'style', 'value'],
-    attributes: true,
     childList: true,
     subtree: true,
   });
@@ -157,8 +178,8 @@ export function installArriveAllTotes(doc: Document = document): () => void {
 
   return () => {
     doc.removeEventListener('click', handleDocumentClick, true);
-    doc.removeEventListener('input', queueSync, true);
-    doc.removeEventListener('change', queueSync, true);
+    doc.removeEventListener('input', handleDocumentFieldChange, true);
+    doc.removeEventListener('change', handleDocumentFieldChange, true);
     observer?.disconnect();
     removeActionItem();
     doc.getElementById(leadApprovalModalId)?.remove();
@@ -244,13 +265,58 @@ function updateActionDisabledState(link: HTMLAnchorElement, running: boolean, ap
   }
 }
 
+function mutationAffectsAction(doc: Document, mutation: MutationRecord): boolean {
+  if (mutation.type !== 'childList') {
+    return false;
+  }
+
+  if (nodesAffectAction(doc, mutation.addedNodes) || nodesAffectAction(doc, mutation.removedNodes)) {
+    return true;
+  }
+
+  return false;
+}
+
+function nodesAffectAction(doc: Document, nodes: NodeList): boolean {
+  for (const node of Array.from(nodes)) {
+    if (!isElementNode(doc, node)) {
+      continue;
+    }
+
+    if (
+      node.id === 'EX22PalBuildActionsDropdown' ||
+      node.id === inTransitFieldId ||
+      node.id === palletIdFieldId ||
+      node.id === leadApprovalModalId ||
+      node.id === leadApprovalBackdropId ||
+      matchesRelevantField(node, inTransitFieldId) ||
+      matchesRelevantField(node, palletIdFieldId) ||
+      node.querySelector(`#EX22PalBuildActionsDropdown, #${inTransitFieldId}, #${palletIdFieldId}, input[name="${inTransitFieldId}"], input[name="${palletIdFieldId}"]`)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isElementNode(doc: Document, node: unknown): node is Element {
+  const ElementCtor = doc.defaultView?.Element;
+
+  return typeof ElementCtor === 'function' && node instanceof ElementCtor;
+}
+
+function matchesRelevantField(target: Element, fieldName: string): boolean {
+  return Boolean(target.closest(`#${fieldName}`)) || target.matches(`input[name="${fieldName}"]`);
+}
+
 function canArriveTotes(doc: Document): boolean {
-  const inTransit = getNumericFieldValue(doc, 'EX22PalBuildToteStatusTotesInTransitValue');
+  const inTransit = getNumericFieldValue(doc, inTransitFieldId);
   return inTransit != null && inTransit >= 1;
 }
 
 function getPalletId(doc: Document): string {
-  return getFieldTextValue(doc, 'PalletId');
+  return getFieldTextValue(doc, palletIdFieldId);
 }
 
 function getNumericFieldValue(doc: Document, fieldName: string): number | null {

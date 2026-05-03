@@ -50,6 +50,82 @@ describe('Arrive All Totes feature', () => {
     cleanup();
   });
 
+  it('injects the menu action when the actions menu mounts later', async () => {
+    const cleanup = installArriveAllTotes();
+
+    expect(document.getElementById('GlideArriveAllTotesAction')).toBeNull();
+
+    document.body.innerHTML = `
+      <ul>
+        <li>
+          <a id="EX22PalBuildActionsDropdown" href="#">Actions</a>
+          <ul class="dropdown-menu"></ul>
+        </li>
+      </ul>
+      <div id="EX22PalBuildToteStatusTotesInTransitValue"><input value="1"></div>
+      <div id="PalletId"><input value="PALLET-100"></div>
+    `;
+    await flushAnimationFrame();
+
+    expect(document.getElementById('GlideArriveAllTotesAction')).toBeInstanceOf(HTMLAnchorElement);
+
+    cleanup();
+  });
+
+  it('updates the disabled state when the in-transit value comes from a named input field', async () => {
+    document.body.innerHTML = `
+      <ul>
+        <li>
+          <a id="EX22PalBuildActionsDropdown" href="#">Actions</a>
+          <ul class="dropdown-menu">
+            <li class="dropdownaction menubutton"><a href="#">Existing action</a></li>
+          </ul>
+        </li>
+      </ul>
+      <input name="EX22PalBuildToteStatusTotesInTransitValue" value="0">
+      <input name="PalletId" value="PALLET-100">
+    `;
+
+    const cleanup = installArriveAllTotes();
+    const link = document.getElementById('GlideArriveAllTotesAction') as HTMLAnchorElement;
+    const inTransitInput = document.querySelector('input[name="EX22PalBuildToteStatusTotesInTransitValue"]') as HTMLInputElement;
+
+    expect(link.getAttribute('aria-disabled')).toBe('true');
+
+    inTransitInput.value = '1';
+    document.getElementById('EX22PalBuildActionsDropdown')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(link.getAttribute('aria-disabled')).toBe('false');
+
+    cleanup();
+  });
+
+  it('rechecks the disabled state when the actions dropdown is opened after pallet details load', () => {
+    document.body.innerHTML = `
+      <ul>
+        <li>
+          <a id="EX22PalBuildActionsDropdown" href="#">Actions</a>
+          <ul class="dropdown-menu"></ul>
+        </li>
+      </ul>
+      <div id="EX22PalBuildToteStatusTotesInTransitValue"><input value="0"></div>
+      <div id="PalletId"><input value="PALLET-100"></div>
+    `;
+
+    const cleanup = installArriveAllTotes();
+    const link = document.getElementById('GlideArriveAllTotesAction') as HTMLAnchorElement;
+    const inTransitInput = document.querySelector('#EX22PalBuildToteStatusTotesInTransitValue input') as HTMLInputElement;
+
+    expect(link.getAttribute('aria-disabled')).toBe('true');
+
+    inTransitInput.value = '1';
+    document.getElementById('EX22PalBuildActionsDropdown')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(link.getAttribute('aria-disabled')).toBe('false');
+
+    cleanup();
+  });
+
   it('requests approval and routes GetSessionInfo plus ArriveAllTotes through the bridge client', async () => {
     document.body.innerHTML = `
       <ul>
