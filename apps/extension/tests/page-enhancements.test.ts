@@ -236,6 +236,26 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('mounts the ADFS keyboard when the login form appears later', async () => {
+    const cleanup = installAdfsOverlayKeyboard();
+
+    expect(document.querySelector('.glide-adfs-keyboard')).toBeNull();
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    await flushAnimationFrame();
+
+    expect(document.querySelector('.glide-adfs-keyboard')).not.toBeNull();
+
+    cleanup();
+  });
+
   it('supports the old symbol keyboard layout for ADFS credentials', () => {
     document.body.innerHTML = `
       <form id="loginForm">

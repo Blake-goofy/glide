@@ -106,8 +106,12 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
   doc.addEventListener('focusin', handleFocusIn, true);
   doc.addEventListener('mousedown', handleMouseDown, true);
 
-  const observer = new activeWindow.MutationObserver(queueSync);
-  observer.observe(doc.documentElement, { childList: true, subtree: true });
+  const observer = new activeWindow.MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutationAffectsKeyboard(doc, mutation))) {
+      queueSync();
+    }
+  });
+  observer.observe(doc.body ?? doc.documentElement, { childList: true, subtree: true });
   syncKeyboard();
 
   return () => {
@@ -490,6 +494,40 @@ function isAdfsPage(doc: Document): boolean {
 
 function isCredentialInput(element: EventTarget | null): element is HTMLInputElement {
   return element instanceof HTMLInputElement && !element.disabled && !element.readOnly && element.matches(credentialSelector);
+}
+
+function mutationAffectsKeyboard(doc: Document, mutation: MutationRecord): boolean {
+  if (mutation.type !== 'childList') {
+    return false;
+  }
+
+  return nodesAffectKeyboard(doc, mutation.addedNodes) || nodesAffectKeyboard(doc, mutation.removedNodes);
+}
+
+function nodesAffectKeyboard(doc: Document, nodes: NodeList): boolean {
+  for (const node of Array.from(nodes)) {
+    if (!isElementNode(doc, node)) {
+      continue;
+    }
+
+    if (
+      node.id === formId ||
+      node.id === submitId ||
+      node.classList.contains(rootClass) ||
+      node.matches(credentialSelector) ||
+      node.querySelector(`#${formId}, #${submitId}, ${credentialSelector}, .${rootClass}`)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isElementNode(doc: Document, node: unknown): node is Element {
+  const ElementCtor = doc.defaultView?.Element;
+
+  return typeof ElementCtor === 'function' && node instanceof ElementCtor;
 }
 
 function getCredentialInputs(doc: Document): HTMLInputElement[] {
