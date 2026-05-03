@@ -440,6 +440,38 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('does not resync Session Strip theme for unrelated DOM mutations', async () => {
+    localStorage.setItem('MachineName', 'SlotStax Station 1');
+    document.cookie = 'UserInformation=UserName=bbecker';
+    document.body.setAttribute('data-theme', 'dark');
+    document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(12, 34, 56); color: rgb(240, 241, 242);"></div><main><div style="height: 24px;">content</div></main>';
+
+    stubSessionStripBridgeResponse({
+      ActivityOptionsJson: JSON.stringify([{ DEFAULT_ACTIVITY: 'Y', DESCRIPTION: 'Decant', IDENTIFIER: 'DECANT' }]),
+      HasActiveSession: 'false',
+      UserName: 'bbecker',
+    });
+
+    const paletteSpy = vi.spyOn(scaleTheme, 'resolveScaleThemePalette');
+    const cleanup = installSessionStrip();
+    await flushAnimationFrames(2);
+
+    const initialCalls = paletteSpy.mock.calls.length;
+    const unrelated = document.createElement('div');
+    unrelated.className = 'totally-unrelated-node';
+    document.body.append(unrelated);
+    await flushAnimationFrame();
+
+    expect(paletteSpy.mock.calls.length).toBe(initialCalls);
+
+    document.body.setAttribute('data-theme', 'light');
+    await flushAnimationFrame();
+
+    expect(paletteSpy.mock.calls.length).toBeGreaterThan(initialCalls);
+
+    cleanup();
+  });
+
   it('keeps fixed-toolbar content padding stable during transient SlotStax refreshes', async () => {
     localStorage.setItem('MachineName', 'SlotStax Station 1');
     document.cookie = 'UserInformation=UserName=bbecker';

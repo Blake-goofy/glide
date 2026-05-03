@@ -24,6 +24,24 @@ const offsetBaseScrollPaddingVar = `--${rootClass}-base-scroll-padding-top`;
 const fixedToolbarContentPadding = '0px';
 const placeholder = '--';
 const eligiblePaths = ['/warehousemobile', '/scale/trans/ex22slotstaxpalletbuild', '/scale/trans/packing'];
+const themeRelevantSelectors = [
+  '.transheadermiddlepanel',
+  '.transheaderleftpanel',
+  '.transheaderrightpanel',
+  '.transheaderpanel',
+  '.cruddatapart',
+  '.ion-page',
+  'app-generic-view-processor',
+  'ion-app',
+  '#TransactionScreenForm',
+  '[data-controltype="form"]',
+  '#scrollableContentWrapper',
+  '.containercontent',
+  'main',
+  '#app',
+  '.ui-accordion .ui-accordion-content',
+  '.ui-widget-content.ui-accordion-content',
+] as const;
 
 interface ActivityOption {
   defaultActivity: string;
@@ -760,8 +778,10 @@ export function installSessionStrip(doc: Document = document): () => void {
       return;
     }
 
-    themeObserver = new MutationObserver(() => {
-      syncTheme();
+    themeObserver = new MutationObserver((mutations) => {
+      if (mutations.some((mutation) => mutationAffectsTheme(doc, mutation, root))) {
+        syncTheme();
+      }
     });
     themeObserver.observe(doc.documentElement, {
       attributes: true,
@@ -796,6 +816,58 @@ export function installSessionStrip(doc: Document = document): () => void {
     root.style.setProperty(`--${rootClass}-secondary-text`, palette.secondaryButtonText);
     root.style.setProperty(`--${rootClass}-error`, palette.error);
   }
+}
+
+function mutationAffectsTheme(doc: Document, mutation: MutationRecord, ignoredRoot: HTMLElement | null): boolean {
+  if (mutation.type === 'attributes') {
+    return isRelevantThemeElement(doc, mutation.target, ignoredRoot);
+  }
+
+  return nodesAffectTheme(doc, mutation.addedNodes, ignoredRoot) || nodesAffectTheme(doc, mutation.removedNodes, ignoredRoot);
+}
+
+function nodesAffectTheme(doc: Document, nodes: NodeList, ignoredRoot: HTMLElement | null): boolean {
+  for (const node of Array.from(nodes)) {
+    if (isRelevantThemeElement(doc, node, ignoredRoot)) {
+      return true;
+    }
+
+    if (!isElementNode(doc, node)) {
+      continue;
+    }
+
+    if (ignoredRoot && (node === ignoredRoot || node.contains(ignoredRoot))) {
+      continue;
+    }
+
+    if (node.querySelector(themeRelevantSelectors.join(', '))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isRelevantThemeElement(doc: Document, node: unknown, ignoredRoot: HTMLElement | null): node is HTMLElement {
+  if (!isElementNode(doc, node)) {
+    return false;
+  }
+
+  if (ignoredRoot && (node === ignoredRoot || ignoredRoot.contains(node))) {
+    return false;
+  }
+
+  if (node === doc.documentElement || node === doc.body) {
+    return true;
+  }
+
+  return node.matches(themeRelevantSelectors.join(', '));
+}
+
+function isElementNode(doc: Document, node: unknown): node is Element {
+  const ElementCtor = doc.defaultView?.Element;
+
+  return typeof ElementCtor === 'function' && node instanceof ElementCtor;
 }
 
 function renderRow(doc: Document, row: SessionRow, allowExtraUsers: boolean): HTMLElement {
