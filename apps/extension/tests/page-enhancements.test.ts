@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { glideProtocol, type GlideBridgeMessage, type GlideContentMessage } from '@blakebecker/glide-shared';
+import * as scaleTheme from '../src/features/scale-theme';
 
 import { installAdfsOverlayKeyboard } from '../src/features/adfs-overlay-keyboard';
 import { installClickableRows } from '../src/features/clickable-rows';
@@ -539,6 +540,33 @@ describe('page enhancements', () => {
     expect(document.documentElement.style.getPropertyValue('background-color')).toBe('');
     expect(document.body.style.getPropertyValue('background-color')).toBe('');
     expect(detailPane?.style.getPropertyValue('background-color')).toBe('');
+  });
+
+  it('updates dark mode detail panes that mount later without resyncing for unrelated nodes', async () => {
+    document.body.setAttribute('data-theme', 'dark');
+    document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(18, 28, 38); color: rgb(240, 241, 242);"></div><main></main>';
+
+    const paletteSpy = vi.spyOn(scaleTheme, 'resolveScaleThemePalette');
+    const cleanup = installDarkModeBackgroundFix();
+
+    expect(paletteSpy).toHaveBeenCalledTimes(1);
+
+    const unrelated = document.createElement('div');
+    unrelated.className = 'totally-unrelated-node';
+    document.body.append(unrelated);
+    await flushAnimationFrame();
+
+    expect(paletteSpy).toHaveBeenCalledTimes(1);
+
+    const detailPane = document.createElement('div');
+    detailPane.className = 'detailpanepart';
+    document.body.append(detailPane);
+    await flushAnimationFrame();
+
+    expect(detailPane.style.getPropertyValue('background-color')).toBe('rgb(18, 28, 38)');
+    expect(paletteSpy).toHaveBeenCalledTimes(2);
+
+    cleanup();
   });
 });
 
