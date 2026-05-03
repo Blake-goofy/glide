@@ -33,8 +33,12 @@ export function installUnitsInToteNumpad(doc: Document = document): () => void {
   };
 
   const queueSync = createQueuedSync(syncKeypad);
-  const observer = new MutationObserver(queueSync);
-  observer.observe(doc.documentElement, { childList: true, subtree: true });
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutationAffectsKeypad(doc, mutation))) {
+      queueSync();
+    }
+  });
+  observer.observe(doc.body ?? doc.documentElement, { childList: true, subtree: true });
   syncKeypad();
 
   return () => {
@@ -141,6 +145,10 @@ function getInputHost(doc: Document): HTMLElement | null {
   return doc.getElementById(inputHostId);
 }
 
+function getKeypad(doc: Document): HTMLElement | null {
+  return doc.querySelector<HTMLElement>(`.${rootClass}`);
+}
+
 function getNativeInput(host: HTMLElement | null): HTMLInputElement | null {
   if (!host) {
     return null;
@@ -221,6 +229,52 @@ function mutateInputValue(
   input.setSelectionRange(next.nextPosition, next.nextPosition);
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+}
+
+function mutationAffectsKeypad(doc: Document, mutation: MutationRecord): boolean {
+  if (mutation.type !== 'childList') {
+    return false;
+  }
+
+  if (nodesAffectKeypad(doc, mutation.addedNodes) || nodesAffectKeypad(doc, mutation.removedNodes)) {
+    return true;
+  }
+
+  const target = mutation.target;
+
+  if (!isElementNode(doc, target)) {
+    return false;
+  }
+
+  const host = getInputHost(doc);
+  const keypad = getKeypad(doc);
+  const anchorParent = host ? findAnchor(host)?.parentElement : null;
+
+  return target === anchorParent || target === keypad?.parentElement;
+}
+
+function nodesAffectKeypad(doc: Document, nodes: NodeList): boolean {
+  for (const node of Array.from(nodes)) {
+    if (!isElementNode(doc, node)) {
+      continue;
+    }
+
+    if (node.id === inputHostId || node.classList.contains(rootClass)) {
+      return true;
+    }
+
+    if (node.querySelector(`#${inputHostId}, .${rootClass}`)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isElementNode(doc: Document, node: Node): node is Element {
+  const ElementCtor = doc.defaultView?.Element;
+
+  return typeof ElementCtor === 'function' && node instanceof ElementCtor;
 }
 
 function createQueuedSync(callback: () => void): () => void {
