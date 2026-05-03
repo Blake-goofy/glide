@@ -12,21 +12,6 @@
     "diagnosticsEnabled": {
       "type": "boolean",
       "default": false
-    },
-    "featureFlags": {
-      "type": "object",
-      "properties": {
-        "bridgeSpike": {
-          "type": "boolean"
-        },
-        "sessionStrip": {
-          "type": "boolean"
-        },
-        "arriveAllTotes": {
-          "type": "boolean"
-        }
-      },
-      "default": {}
     }
   }
 }

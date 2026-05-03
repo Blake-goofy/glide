@@ -8,7 +8,6 @@ chrome.runtime.onInstalled.addListener(async () => {
     glideInstalledAt: new Date().toISOString(),
     glidePolicySnapshot: {
       diagnosticsEnabled: policy.diagnosticsEnabled,
-      featureFlags: policy.featureFlags,
     },
   });
 });
