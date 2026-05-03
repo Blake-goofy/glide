@@ -574,6 +574,21 @@ describe('page enhancements', () => {
     expect(detailPane?.style.getPropertyValue('background-color')).toBe('');
   });
 
+  it('falls back to black on dark pages without usable theme anchors', () => {
+    document.body.setAttribute('data-theme', 'dark');
+    document.body.innerHTML = '<div class="dashboard-shell"><section>dashboard</section></div>';
+
+    const cleanup = installDarkModeBackgroundFix();
+
+    expect(document.documentElement.style.getPropertyValue('background-color')).toBe('rgb(0, 0, 0)');
+    expect(document.body.style.getPropertyValue('background-color')).toBe('rgb(0, 0, 0)');
+
+    cleanup();
+
+    expect(document.documentElement.style.getPropertyValue('background-color')).toBe('');
+    expect(document.body.style.getPropertyValue('background-color')).toBe('');
+  });
+
   it('updates dark mode detail panes that mount later without resyncing for unrelated nodes', async () => {
     document.body.setAttribute('data-theme', 'dark');
     document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(18, 28, 38); color: rgb(240, 241, 242);"></div><main></main>';

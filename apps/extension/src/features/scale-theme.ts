@@ -42,6 +42,7 @@ const pageShellSelectors = [
 
 const darkPageBackgroundAnchorSelectors = ['.ui-accordion .ui-accordion-content', '.ui-widget-content.ui-accordion-content'];
 const darkPageBackgroundRuleSelectors = ["[data-igTheme='dark'] .ui-accordion .ui-accordion-content"];
+const defaultDarkPageBackground = 'rgb(0, 0, 0)';
 
 interface CssColor {
   alpha: number;
@@ -130,7 +131,7 @@ export function resolveScaleThemePalette(doc: Document = document, ignoredElemen
   const secondaryButton =
     getThemeCssValue(documentStyle, [`--action-menu-option-bg-${themeSuffix}`, `--text-input-background-color-${themeSuffix}`, '--text-input-background-color']) ||
     fieldBackground;
-  const pageBackground = activeTheme === 'light' ? '' : darkPageBackground || panelBackground;
+  const pageBackground = activeTheme === 'light' ? '' : resolveDarkThemePageBackground(darkPageBackground, panelBackground, panelColor);
   const textCandidates = [text, inputText].filter(Boolean);
 
   return {
@@ -154,6 +155,18 @@ export function resolveScaleThemePalette(doc: Document = document, ignoredElemen
     stopButtonText: pickReadableTextColor(stopButton, textCandidates),
     text,
   };
+}
+
+function resolveDarkThemePageBackground(darkPageBackground: string, panelBackground: string, panelColor: CssColor | null): string {
+  if (darkPageBackground) {
+    return darkPageBackground;
+  }
+
+  if (panelColor && isDarkColor(panelColor)) {
+    return panelBackground;
+  }
+
+  return defaultDarkPageBackground;
 }
 
 function resolveDarkPageBackground(doc: Document, ignoredElements: Element[]): string {
