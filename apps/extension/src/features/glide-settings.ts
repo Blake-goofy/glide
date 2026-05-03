@@ -171,6 +171,9 @@ function ensureModal(): void {
   modal.style.display = 'none';
   modal.tabIndex = -1;
 
+  const dialog = ensureModalShell(activeDocument, modal, 'modal-dialog');
+  const content = ensureModalShell(activeDocument, dialog, 'modal-content');
+
   const form = modal.querySelector('form') ?? activeDocument.createElement('form');
   form.className = 'form-horizontal';
   form.id = modalFormId;
@@ -208,18 +211,6 @@ function ensureModal(): void {
   `;
 
   if (!form.parentElement) {
-    const content = modal.querySelector('.modal-content') ?? activeDocument.createElement('div');
-
-    if (!content.parentElement) {
-      content.className = 'modal-content';
-      const dialog = modal.querySelector('.modal-dialog') ?? activeDocument.createElement('div');
-      if (!dialog.parentElement) {
-        dialog.className = 'modal-dialog';
-        modal.append(dialog);
-      }
-      dialog.append(content);
-    }
-
     content.replaceChildren(form);
   }
 
@@ -512,6 +503,35 @@ function buildFallbackModal(activeDocument: Document): HTMLDivElement {
     </div>
   `;
   return modal;
+}
+
+function ensureModalShell(activeDocument: Document, parent: HTMLDivElement, className: string): HTMLDivElement {
+  const existingChild = findDirectChildByClass(parent, className);
+
+  if (existingChild) {
+    existingChild.className = className;
+    return existingChild;
+  }
+
+  const shell = activeDocument.createElement('div');
+  shell.className = className;
+
+  while (parent.firstChild) {
+    shell.append(parent.firstChild);
+  }
+
+  parent.append(shell);
+  return shell;
+}
+
+function findDirectChildByClass(parent: HTMLDivElement, className: string): HTMLDivElement | null {
+  for (const child of Array.from(parent.children)) {
+    if (child instanceof HTMLDivElement && child.classList.contains(className)) {
+      return child;
+    }
+  }
+
+  return null;
 }
 
 function ensureModalSection(parent: Element, tagName: 'div', className: string, controlType: string): HTMLDivElement {

@@ -70,6 +70,27 @@ describe('isolated content script', () => {
     expect(modal).not.toBeNull();
   });
 
+  it('rebuilds the Glide Settings modal shell when the SCALE reset template is malformed', async () => {
+    document.body.innerHTML = `
+      <div id="ResetSettingsModalDialog" class="modal fade">
+        <form><div class="modal-header"></div></form>
+      </div>
+      ${userMenuMarkup}
+    `;
+
+    await import('../src/content/index');
+    await flushMicrotasks();
+
+    const modal = document.getElementById('GlideSettingsModalDialog') as HTMLDivElement | null;
+    const dialog = modal?.querySelector(':scope > .modal-dialog');
+    const content = dialog?.querySelector(':scope > .modal-content');
+
+    expect(modal).not.toBeNull();
+    expect(dialog).not.toBeNull();
+    expect(content).not.toBeNull();
+    expect(content?.querySelector('form')).not.toBeNull();
+  });
+
   it('defaults the ADFS keyboard on when SCALE local storage says the machine is SlotStax', async () => {
     const storageGet = vi.fn((_key: string, callback: (items: Record<string, unknown>) => void) => {
       callback({});
