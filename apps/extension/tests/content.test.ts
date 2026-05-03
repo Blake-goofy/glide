@@ -70,6 +70,18 @@ describe('isolated content script', () => {
     expect(modal).not.toBeNull();
   });
 
+  it('reinjects Glide Settings when the menu item is removed from an existing user menu', async () => {
+    document.body.innerHTML = userMenuMarkup;
+
+    await import('../src/content/index');
+    await flushMicrotasks();
+
+    document.getElementById('GlideSettingsMenuItem')?.closest('li')?.remove();
+    await flushMicrotasks();
+
+    expect(document.getElementById('GlideSettingsMenuItem')?.textContent).toBe('Glide Settings');
+  });
+
   it('rebuilds the Glide Settings modal shell when the SCALE reset template is malformed', async () => {
     document.body.innerHTML = `
       <div id="ResetSettingsModalDialog" class="modal fade">

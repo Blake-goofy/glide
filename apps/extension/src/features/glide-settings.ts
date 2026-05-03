@@ -73,11 +73,11 @@ export function initGlideSettingsUi(): void {
   settingsUiInitialized = true;
   ensureSettingsUi();
 
-  settingsObserver = new MutationObserver(() => {
-    ensureSettingsUi();
+  settingsObserver = new MutationObserver((mutations) => {
+    syncSettingsUiForMutations(mutations);
   });
 
-  settingsObserver.observe(document.documentElement, {
+  settingsObserver.observe(document.body ?? document.documentElement, {
     childList: true,
     subtree: true,
   });
@@ -118,6 +118,50 @@ function ensureSettingsUi(): void {
   for (const menu of activeDocument.querySelectorAll<HTMLUListElement>(menuSelector)) {
     ensureMenuItem(menu);
   }
+}
+
+function syncSettingsUiForMutations(mutations: MutationRecord[]): void {
+  const activeDocument = globalThis.document;
+
+  if (!activeDocument?.body) {
+    return;
+  }
+
+  if (!activeDocument.getElementById(modalId)) {
+    ensureModal();
+  }
+
+  const menus = new Set<HTMLUListElement>();
+
+  for (const mutation of mutations) {
+    collectSettingsMenus(mutation.target, menus);
+
+    for (const node of Array.from(mutation.addedNodes)) {
+      collectSettingsMenus(node, menus);
+    }
+  }
+
+  for (const menu of menus) {
+    ensureMenuItem(menu);
+  }
+}
+
+function collectSettingsMenus(node: Node | null, menus: Set<HTMLUListElement>): void {
+  if (!(node instanceof Element)) {
+    return;
+  }
+
+  if (node instanceof HTMLUListElement && node.matches(menuSelector)) {
+    menus.add(node);
+  }
+
+  const parentMenu = node.closest<HTMLUListElement>(menuSelector);
+
+  if (parentMenu) {
+    menus.add(parentMenu);
+  }
+
+  node.querySelectorAll<HTMLUListElement>(menuSelector).forEach((menu) => menus.add(menu));
 }
 
 function ensureMenuItem(menu: HTMLUListElement): void {
