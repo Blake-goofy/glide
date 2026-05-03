@@ -385,6 +385,63 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('keeps fixed-toolbar content padding stable during transient SlotStax refreshes', async () => {
+    localStorage.setItem('MachineName', 'SlotStax Station 1');
+    document.cookie = 'UserInformation=UserName=bbecker';
+    document.body.innerHTML = `
+      <div id="slotstax-shell">
+        <div id="fixedTopWrapper">toolbar</div>
+        <form id="TransactionScreenForm">
+          <div id="scrollableContentWrapper" style="padding-top: 32.7969px;">content</div>
+        </form>
+      </div>
+    `;
+
+    const toolbar = document.getElementById('fixedTopWrapper') as HTMLDivElement;
+    vi.spyOn(toolbar, 'getBoundingClientRect').mockImplementation(
+      () => ({
+        bottom: 32,
+        height: 32,
+        left: 0,
+        right: 0,
+        top: 0,
+        width: 200,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect,
+    );
+
+    stubSessionStripBridgeResponse({
+      ActivityOptionsJson: JSON.stringify([{ DEFAULT_ACTIVITY: 'Y', DESCRIPTION: 'Decant', IDENTIFIER: 'DECANT' }]),
+      ElapsedTime: '00:05:00',
+      HasActiveSession: 'true',
+      UserName: 'bbecker',
+    });
+
+    const cleanup = installSessionStrip();
+    await flushAnimationFrames(2);
+
+    const wrapper = document.getElementById('scrollableContentWrapper') as HTMLDivElement;
+
+    expect(wrapper.classList.contains('glide-session-strip--fixed-toolbar-content-target')).toBe(true);
+    expect(window.getComputedStyle(wrapper).paddingTop).toBe('0px');
+
+    toolbar.remove();
+    await flushAnimationFrame();
+
+    expect(window.getComputedStyle(wrapper).paddingTop).toBe('0px');
+
+    document.getElementById('slotstax-shell')?.prepend(toolbar);
+    await flushAnimationFrames(2);
+
+    expect(window.getComputedStyle(wrapper).paddingTop).toBe('0px');
+
+    cleanup();
+    expect(wrapper.classList.contains('glide-session-strip--fixed-toolbar-content-target')).toBe(false);
+    expect(wrapper.style.getPropertyValue('padding-top')).toBe('32.7969px');
+  });
+
   it('applies and restores the dark mode background fix separately from Session Strip', () => {
     document.body.setAttribute('data-theme', 'dark');
     document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(18, 28, 38); color: rgb(240, 241, 242);"></div><main></main>';
@@ -491,4 +548,28 @@ function stubBridgeToasts(): Array<{ kind: string; message: string }> {
   }
 
   return messages;
+}
+
+function stubSessionStripBridgeResponse(payload: Record<string, unknown>): void {
+  window.addEventListener(
+    glideProtocol.contentToBridgeEvent,
+    (event) => {
+      const request = (event as CustomEvent<GlideContentMessage>).detail;
+
+      if (request.type !== 'glide.userAction') {
+        return;
+      }
+
+      const response: GlideBridgeMessage = {
+        id: request.id,
+        ok: true,
+        payload,
+        source: glideProtocol.sourceBridge,
+        type: 'glide.userAction.result',
+      };
+
+      window.dispatchEvent(new CustomEvent(glideProtocol.bridgeToContentEvent, { detail: response }));
+    },
+    { once: true },
+  );
 }

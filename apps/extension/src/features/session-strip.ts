@@ -16,12 +16,11 @@ const errorClass = `${rootClass}__error`;
 const styleId = `${rootClass}-style`;
 const belowHeaderClass = `${rootClass}--below-header`;
 const offsetTargetClass = `${rootClass}--offset-target`;
+const fixedToolbarContentTargetClass = `${rootClass}--fixed-toolbar-content-target`;
 const offsetVar = `--${rootClass}-offset`;
 const offsetBaseTopVar = `--${rootClass}-base-offset-top`;
 const offsetBasePaddingVar = `--${rootClass}-base-padding-top`;
 const offsetBaseScrollPaddingVar = `--${rootClass}-base-scroll-padding-top`;
-const fixedToolbarPaddingVar = `--${rootClass}-fixed-toolbar-base-padding-top`;
-const fixedToolbarPaddingPriorityVar = `--${rootClass}-fixed-toolbar-base-padding-priority`;
 const fixedToolbarContentPadding = '0px';
 const placeholder = '--';
 const eligiblePaths = ['/warehousemobile', '/scale/trans/ex22slotstaxpalletbuild', '/scale/trans/packing'];
@@ -62,6 +61,8 @@ export function installSessionStrip(doc: Document = document): () => void {
   let layoutSyncQueued = false;
   let rootPlacementMode: 'before-content' | 'below-fixed-header' | 'below-fixed-toolbar' | 'body' = 'body';
   let fixedToolbarContentTarget: HTMLElement | null = null;
+  let fixedToolbarResetVersion = 0;
+  const fixedToolbarBasePadding = new WeakMap<HTMLElement, { priority: string; value: string }>();
   let nextRowId = 1;
   const rows: SessionRow[] = [];
 
@@ -682,8 +683,26 @@ export function installSessionStrip(doc: Document = document): () => void {
     const nextTarget = rootPlacementMode === 'below-fixed-toolbar' ? findFixedToolbarContentPaddingTarget() : null;
 
     if (fixedToolbarContentTarget && fixedToolbarContentTarget !== nextTarget) {
+      if (!nextTarget) {
+        const currentTarget = fixedToolbarContentTarget;
+        const resetVersion = ++fixedToolbarResetVersion;
+
+        defer(() => {
+          if (fixedToolbarResetVersion !== resetVersion || fixedToolbarContentTarget !== currentTarget) {
+            return;
+          }
+
+          resetFixedToolbarContentPadding(currentTarget);
+          fixedToolbarContentTarget = null;
+        });
+
+        return;
+      }
+
       resetFixedToolbarContentPadding(fixedToolbarContentTarget);
     }
+
+    fixedToolbarResetVersion += 1;
 
     if (nextTarget) {
       applyFixedToolbarContentPadding(nextTarget);
@@ -706,20 +725,26 @@ export function installSessionStrip(doc: Document = document): () => void {
   function applyFixedToolbarContentPadding(target: HTMLElement): void {
     const activeWindow = doc.defaultView ?? window;
 
-    if (!target.style.getPropertyValue(fixedToolbarPaddingVar)) {
+    if (!fixedToolbarBasePadding.has(target)) {
       const computed = activeWindow.getComputedStyle(target);
       const basePaddingTop = target.style.getPropertyValue('padding-top').trim() || computed.paddingTop || '0px';
       const basePriority = target.style.getPropertyPriority('padding-top').trim();
-      target.style.setProperty(fixedToolbarPaddingVar, basePaddingTop);
-      target.style.setProperty(fixedToolbarPaddingPriorityVar, basePriority || '');
+      fixedToolbarBasePadding.set(target, {
+        priority: basePriority,
+        value: basePaddingTop,
+      });
     }
 
+    target.classList.add(fixedToolbarContentTargetClass);
     target.style.setProperty('padding-top', fixedToolbarContentPadding, 'important');
   }
 
   function resetFixedToolbarContentPadding(target: HTMLElement): void {
-    const basePaddingTop = target.style.getPropertyValue(fixedToolbarPaddingVar).trim();
-    const basePriority = target.style.getPropertyValue(fixedToolbarPaddingPriorityVar).trim();
+    const basePadding = fixedToolbarBasePadding.get(target);
+    const basePaddingTop = basePadding?.value.trim() ?? '';
+    const basePriority = basePadding?.priority.trim() ?? '';
+
+    target.classList.remove(fixedToolbarContentTargetClass);
 
     if (basePaddingTop) {
       target.style.setProperty('padding-top', basePaddingTop, basePriority === 'important' ? 'important' : undefined);
@@ -727,8 +752,7 @@ export function installSessionStrip(doc: Document = document): () => void {
       target.style.removeProperty('padding-top');
     }
 
-    target.style.removeProperty(fixedToolbarPaddingVar);
-    target.style.removeProperty(fixedToolbarPaddingPriorityVar);
+    fixedToolbarBasePadding.delete(target);
   }
 
   function startThemeSync(): void {
@@ -1289,6 +1313,9 @@ function ensureStyles(doc: Document): void {
     ion-content.${offsetTargetClass}::part(scroll) {
       padding-top: calc(var(${offsetBasePaddingVar}, 0px) + var(${offsetVar}, 0px)) !important;
       box-sizing: border-box;
+    }
+    .${fixedToolbarContentTargetClass} {
+      padding-top: ${fixedToolbarContentPadding} !important;
     }
     @media (max-width: 900px) {
       .${rootClass}__panel { padding: 12px; }
