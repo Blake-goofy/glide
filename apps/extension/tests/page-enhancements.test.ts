@@ -37,6 +37,22 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('primes clickable rows when the pallet input host appears later', async () => {
+    document.body.innerHTML = '<ion-row class="table-row"><ion-col>LP-1002</ion-col><ion-col>Ready</ion-col></ion-row>';
+
+    const cleanup = installClickableRows();
+    const row = document.querySelector('ion-row') as HTMLElement;
+
+    expect(row.classList.contains('glide-clickable-row')).toBe(false);
+
+    document.body.insertAdjacentHTML('afterbegin', '<div id="PalletColumnId"><input /></div>');
+    await flushAnimationFrame();
+
+    expect(row.classList.contains('glide-clickable-row')).toBe(true);
+
+    cleanup();
+  });
+
   it('adds a numeric keypad for the Units in Tote input', () => {
     document.body.innerHTML = `
       <ion-item><scale-input><div id="UnitsInTote"><input /></div></scale-input></ion-item>
@@ -46,6 +62,24 @@ describe('page enhancements', () => {
     document.querySelector<HTMLButtonElement>('.glide-units-in-tote-numpad__key[data-value="7"]')?.click();
 
     expect(document.querySelector<HTMLInputElement>('#UnitsInTote input')?.value).toBe('7');
+
+    cleanup();
+  });
+
+  it('adds and removes the Units in Tote keypad when the host mounts and unmounts later', async () => {
+    const cleanup = installUnitsInToteNumpad();
+
+    expect(document.querySelector('.glide-units-in-tote-numpad')).toBeNull();
+
+    document.body.innerHTML = '<ion-item><scale-input><div id="UnitsInTote"><input /></div></scale-input></ion-item>';
+    await flushAnimationFrame();
+
+    expect(document.querySelector('.glide-units-in-tote-numpad')).not.toBeNull();
+
+    document.getElementById('UnitsInTote')?.remove();
+    await flushAnimationFrame();
+
+    expect(document.querySelector('.glide-units-in-tote-numpad')).toBeNull();
 
     cleanup();
   });
