@@ -28,6 +28,29 @@ export function installGridCopy(doc: Document = document): () => void {
   let longPressTimer: number | null = null;
   let suppressedLinkCell: HTMLElement | null = null;
   let suppressedLinkUntil = 0;
+  let longPressListenersAttached = false;
+
+  const attachLongPressListeners = (): void => {
+    if (longPressListenersAttached) {
+      return;
+    }
+
+    longPressListenersAttached = true;
+    doc.addEventListener('pointermove', handlePointerMove, true);
+    doc.addEventListener('pointerup', handlePointerEnd, true);
+    doc.addEventListener('pointercancel', handlePointerEnd, true);
+  };
+
+  const detachLongPressListeners = (): void => {
+    if (!longPressListenersAttached) {
+      return;
+    }
+
+    longPressListenersAttached = false;
+    doc.removeEventListener('pointermove', handlePointerMove, true);
+    doc.removeEventListener('pointerup', handlePointerEnd, true);
+    doc.removeEventListener('pointercancel', handlePointerEnd, true);
+  };
 
   const clearLongPressTimer = (): void => {
     if (longPressTimer !== null) {
@@ -39,6 +62,7 @@ export function installGridCopy(doc: Document = document): () => void {
   const clearLongPressState = (): void => {
     clearLongPressTimer();
     longPressState = null;
+    detachLongPressListeners();
   };
 
   const clearActiveMenuCell = (): void => {
@@ -167,6 +191,7 @@ export function installGridCopy(doc: Document = document): () => void {
       startY: event.clientY,
       text: candidate.text,
     };
+    attachLongPressListeners();
     longPressTimer = window.setTimeout(() => {
       if (!longPressState) {
         return;
@@ -209,9 +234,6 @@ export function installGridCopy(doc: Document = document): () => void {
   doc.addEventListener('contextmenu', handleContextMenu, true);
   doc.addEventListener('auxclick', handleAuxClick, true);
   doc.addEventListener('pointerdown', handlePointerDown, true);
-  doc.addEventListener('pointermove', handlePointerMove, true);
-  doc.addEventListener('pointerup', handlePointerEnd, true);
-  doc.addEventListener('pointercancel', handlePointerEnd, true);
 
   return () => {
     clearLongPressState();
@@ -221,9 +243,7 @@ export function installGridCopy(doc: Document = document): () => void {
     doc.removeEventListener('contextmenu', handleContextMenu, true);
     doc.removeEventListener('auxclick', handleAuxClick, true);
     doc.removeEventListener('pointerdown', handlePointerDown, true);
-    doc.removeEventListener('pointermove', handlePointerMove, true);
-    doc.removeEventListener('pointerup', handlePointerEnd, true);
-    doc.removeEventListener('pointercancel', handlePointerEnd, true);
+    detachLongPressListeners();
   };
 
   function showCopyMenu(activeDocument: Document, cell: HTMLElement, text: string, clientX: number, clientY: number): void {
