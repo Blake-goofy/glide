@@ -40,7 +40,7 @@ Use `pnpm check` for the full local gate.
 
 ## Local Manifest Override
 
-The checked-in manifest is a public template. To build against real internal hosts, copy `apps/extension/src/manifest.local.example.json` to `apps/extension/src/manifest.local.json` and replace the placeholder match patterns with your deployment hosts. The local override file is gitignored, and builds fall back to the template manifest when it is absent.
+The checked-in manifest is a public template. To build against real internal hosts, copy `extension/src/manifest.local.example.json` to `extension/src/manifest.local.json` and replace the placeholder match patterns with your deployment hosts. The local override file is gitignored, and builds fall back to the template manifest when it is absent.
 
 ## Load The Extension
 
@@ -48,13 +48,13 @@ The checked-in manifest is a public template. To build against real internal hos
 2. Open `chrome://extensions`.
 3. Enable Developer mode.
 4. Choose Load unpacked.
-5. Select `apps/extension/dist`.
+5. Select `extension/dist`.
 
 After loading, open a supported SCALE page and use the SCALE user menu to access Glide Settings.
 
 ## Project Layout
 
-- `apps/extension`: Manifest V3 extension source, tests, and build output
+- `extension`: Manifest V3 extension source, tests, and build output
 - `packages/shared`: shared message contracts, SCALE types, and managed policy schema helpers
 - `docs`: architecture, bridge contract, and testing guidance
 

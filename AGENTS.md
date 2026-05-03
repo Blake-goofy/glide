@@ -52,7 +52,7 @@ The old desktop launcher repository remains a historical reference for behavior 
 ## Repo Map
 
 ```text
-apps/extension
+extension
   src/background/       # MV3 service worker: lifecycle, policy, storage, diagnostics
   src/content/          # isolated-world DOM integration and feature mounting
   src/bridge/           # main-world SCALE request capture and API calls
@@ -88,8 +88,8 @@ docs
 
 1. Add shared message and SCALE types in `packages/shared` first.
 2. Add or update tests for the bridge API and content behavior before completing the feature.
-3. Keep authenticated SCALE calls in `apps/extension/src/bridge/`.
-4. Keep DOM placement and UI in `apps/extension/src/content/` or `apps/extension/src/features/`.
+3. Keep authenticated SCALE calls in `extension/src/bridge/`.
+4. Keep DOM placement and UI in `extension/src/content/` or `extension/src/features/`.
 5. Add Playwright coverage when the feature depends on real extension wiring or page lifecycle timing.
 ## Commit And PR Conventions
 

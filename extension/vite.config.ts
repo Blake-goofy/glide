@@ -16,7 +16,7 @@ async function loadManifest(): Promise<ManifestV3Export> {
     const override = JSON.parse(overrideSource) as { matches?: unknown };
 
     if (!Array.isArray(override.matches) || override.matches.some((value) => typeof value !== 'string' || value.length === 0)) {
-      throw new Error('apps/extension/src/manifest.local.json must contain a non-empty string array in the matches property.');
+      throw new Error('extension/src/manifest.local.json must contain a non-empty string array in the matches property.');
     }
 
     return createManifest(override.matches) as ManifestV3Export;
@@ -43,7 +43,7 @@ export default defineConfig(
       },
       resolve: {
         alias: {
-          '@blakebecker/glide-shared': fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
+          '@blakebecker/glide-shared': fileURLToPath(new URL('../packages/shared/src/index.ts', import.meta.url)),
         },
       },
       test: {

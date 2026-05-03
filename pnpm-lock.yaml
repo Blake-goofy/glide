@@ -30,11 +30,11 @@ importers:
         specifier: ^8.59.0
         version: 8.59.1(eslint@9.39.4)(typescript@5.9.3)
 
-  apps/extension:
+  extension:
     dependencies:
       '@blakebecker/glide-shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: link:../packages/shared
     devDependencies:
       '@crxjs/vite-plugin':
         specifier: ^2.0.0-beta.32
