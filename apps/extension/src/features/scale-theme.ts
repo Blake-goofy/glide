@@ -40,8 +40,10 @@ const pageShellSelectors = [
   '#app',
 ];
 
+const screenGroupMenuSelectors = ['.ScreenGroupMenu', '[class^="ScreenGroupMenu"]', '[class*=" ScreenGroupMenu"]'];
 const darkPageBackgroundAnchorSelectors = ['.ui-accordion .ui-accordion-content', '.ui-widget-content.ui-accordion-content'];
 const darkPageBackgroundRuleSelectors = ["[data-igTheme='dark'] .ui-accordion .ui-accordion-content"];
+const darkScreenGroupMenuSelectors = ["[data-igTheme='dark'] .ScreenGroupMenu"];
 const defaultDarkPageBackground = 'rgb(0, 0, 0)';
 
 interface CssColor {
@@ -125,6 +127,7 @@ export function resolveScaleThemePalette(doc: Document = document, ignoredElemen
   const stopFallbackColor = parseCssColor(fieldBackground) || panelColor;
   const stopFallback = stopFallbackColor ? formatCssColor(tintColor(stopFallbackColor, isDarkColor(stopFallbackColor) ? 0.18 : -0.12)) : fieldBackground;
   const startButton =
+    resolveScaleStartButtonBackground(doc, activeTheme) ||
     getThemeCssValue(documentStyle, [`--ion-color-go-${themeSuffix}`, '--ion-color-go', '--ion-color-primary']) || fieldBackground;
   const stopButton =
     getThemeCssValue(documentStyle, [`--action-title-bg-${themeSuffix}`, `--footer-bg-${themeSuffix}`, `--action-menu-option-bg-${themeSuffix}`]) || stopFallback;
@@ -169,6 +172,19 @@ function resolveDarkThemePageBackground(darkPageBackground: string, panelBackgro
   return defaultDarkPageBackground;
 }
 
+function resolveScaleStartButtonBackground(doc: Document, activeTheme: 'light' | 'dark'): string {
+  if (activeTheme !== 'dark' || isWarehouseMobilePath(doc.location?.pathname)) {
+    return '';
+  }
+
+  const visibleScreenGroupMenu = findVisibleScreenGroupMenu(doc, []);
+
+  return (
+    getThemeSurfaceCssValue(doc, visibleScreenGroupMenu, 'background-color') ||
+    getStyleRuleValue(doc, darkScreenGroupMenuSelectors, 'background-color')
+  );
+}
+
 function resolveDarkPageBackground(doc: Document, ignoredElements: Element[]): string {
   const anchor = findVisibleDarkPageBackgroundAnchor(doc, ignoredElements);
 
@@ -182,6 +198,10 @@ function resolveDarkPageBackground(doc: Document, ignoredElements: Element[]): s
 function getActiveTheme(doc: Document): 'light' | 'dark' {
   const theme = String(doc.body?.getAttribute('data-theme') || '').trim().toLowerCase();
   return theme === 'light' ? 'light' : 'dark';
+}
+
+function isWarehouseMobilePath(pathname: string | undefined): boolean {
+  return typeof pathname === 'string' && /^\/warehousemobile(\/|$)/i.test(pathname);
 }
 
 function findVisibleThemeSurface(doc: Document, ignoredElements: Element[]): HTMLElement | null {
@@ -214,6 +234,20 @@ function findVisiblePageShell(doc: Document, ignoredElements: Element[]): HTMLEl
 
 function findVisibleDarkPageBackgroundAnchor(doc: Document, ignoredElements: Element[]): HTMLElement | null {
   for (const selector of darkPageBackgroundAnchorSelectors) {
+    for (const candidate of doc.querySelectorAll<HTMLElement>(selector)) {
+      if (shouldIgnoreElement(candidate, ignoredElements) || isPlacementBranchHidden(candidate)) {
+        continue;
+      }
+
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function findVisibleScreenGroupMenu(doc: Document, ignoredElements: Element[]): HTMLElement | null {
+  for (const selector of screenGroupMenuSelectors) {
     for (const candidate of doc.querySelectorAll<HTMLElement>(selector)) {
       if (shouldIgnoreElement(candidate, ignoredElements) || isPlacementBranchHidden(candidate)) {
         continue;

@@ -388,7 +388,15 @@ describe('page enhancements', () => {
   it('routes Session Strip initial session loading through the bridge', async () => {
     localStorage.setItem('MachineName', 'SlotStax Station 1');
     document.cookie = 'UserInformation=UserName=bbecker';
+    document.head.innerHTML = `
+      <style>
+        [data-igTheme='dark'] .ScreenGroupMenu {
+          background-color: #7258ac;
+        }
+      </style>
+    `;
     document.body.setAttribute('data-theme', 'dark');
+    document.body.setAttribute('data-igTheme', 'dark');
     document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(12, 34, 56); color: rgb(240, 241, 242);"></div><main><div style="height: 24px;">content</div></main>';
 
     const bridgeRequest = new Promise<CustomEvent>((resolve) => {
@@ -430,12 +438,41 @@ describe('page enhancements', () => {
     });
     expect(strip).not.toBeNull();
     expect(strip?.style.getPropertyValue('--glide-session-strip-panel-bg')).toBe('rgb(12, 34, 56)');
+    expect(strip?.style.getPropertyValue('--glide-session-strip-start-bg')).toBe('#7258ac');
     expect(document.documentElement.style.getPropertyValue('--glide-session-strip-offset')).not.toBe('');
     expect(strip?.querySelector('.glide-session-strip__field--metric-anchor')).not.toBeNull();
     expect(strip?.querySelector('.glide-session-strip__value--status')).not.toBeNull();
 
     strip?.querySelector<HTMLButtonElement>('button[data-action="add-user"]')?.click();
     expect(strip?.querySelector('.glide-session-strip__row--pending-input')).not.toBeNull();
+
+    cleanup();
+  });
+
+  it('updates the Session Strip start button when ScreenGroupMenu mounts later on regular SCALE pages', async () => {
+    localStorage.setItem('MachineName', 'SlotStax Station 1');
+    document.cookie = 'UserInformation=UserName=bbecker';
+    document.body.setAttribute('data-theme', 'dark');
+    document.body.setAttribute('data-igTheme', 'dark');
+    document.body.innerHTML = '<div class="transheadermiddlepanel" style="background-color: rgb(12, 34, 56); color: rgb(240, 241, 242);"></div><main><div style="height: 24px;">content</div></main>';
+
+    stubSessionStripBridgeResponse({
+      ActivityOptionsJson: JSON.stringify([{ DEFAULT_ACTIVITY: 'Y', DESCRIPTION: 'Decant', IDENTIFIER: 'DECANT' }]),
+      HasActiveSession: 'false',
+      UserName: 'bbecker',
+    });
+
+    const cleanup = installSessionStrip();
+    await flushAnimationFrames(2);
+
+    const strip = document.querySelector<HTMLElement>('.glide-session-strip');
+    const initialStartBackground = strip?.style.getPropertyValue('--glide-session-strip-start-bg');
+
+    document.body.insertAdjacentHTML('beforeend', '<div class="ScreenGroupMenu ScreenGroupMenu8110" style="background-color: #7258ac;">menu</div>');
+    await flushAnimationFrame();
+
+    expect(strip?.style.getPropertyValue('--glide-session-strip-start-bg')).not.toBe(initialStartBackground);
+    expect(strip?.style.getPropertyValue('--glide-session-strip-start-bg')).toBe('rgb(114, 88, 172)');
 
     cleanup();
   });
