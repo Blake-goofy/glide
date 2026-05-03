@@ -31,6 +31,7 @@ The old desktop launcher repository remains a historical reference for behavior 
 3. Use typed contracts at boundaries. Messages and settings must go through shared schemas or shared TypeScript types.
 4. Keep host permissions tight. Do not add broad host permissions without a written reason in the PR.
 5. Tests before features. Every behavior change lands with regression coverage in the same PR.
+6. Treat long-lived DOM hooks as hot paths. Scrutinize work attached to `document`, `documentElement`, `body`, global observers, timers, and high-frequency listeners; prefer scoped selectors, batched updates, lazy attachment, and explicit interaction triggers over broad ambient rescans.
 
 ## Hard Rules
 
@@ -42,6 +43,7 @@ The old desktop launcher repository remains a historical reference for behavior 
 - Do not duplicate request/header capture logic per feature.
 - Use Chrome-supported main-world execution (`world: "MAIN"` or `chrome.scripting` with `world: "MAIN"`). Do not inject ad hoc script tags to bypass extension isolation.
 - Do not parse managed or local configuration ad hoc. Use `packages/shared` schemas and helpers.
+- Do not leave document-wide observers, timers, or high-frequency listeners doing broad rescans when the work can be scoped to relevant nodes, events, or active interactions.
 - Do not add a top-level dependency without explaining why in the PR.
 - Always add or update tests in the same PR as a behavior change.
 - Always use the repo scripts in `package.json`; do not invent one-off build commands.
