@@ -1,6 +1,10 @@
 const rootClass = 'glide-adfs-keyboard';
+const layoutClass = `${rootClass}__layout`;
+const mainClass = `${rootClass}__main`;
 const panelClass = `${rootClass}__panel`;
 const rowClass = `${rootClass}__row`;
+const sideClass = `${rootClass}__side`;
+const sideRowClass = `${rootClass}__side-row`;
 const keyClass = `${rootClass}__key`;
 const statusClass = `${rootClass}__status`;
 const styleId = `${rootClass}-style`;
@@ -12,6 +16,8 @@ const pressedBoxShadow = 'inset 0 2px 4px rgba(0, 0, 0, 0.34), 0 0 0 rgba(0, 0, 
 const pressedTransform = 'translateY(3px)';
 const statusDismissDelayMs = 2500;
 const keyboardSizeModes = ['compact', 'comfortable', 'full'] as const;
+const arrowActions = ['arrow-left', 'arrow-right', 'arrow-up', 'arrow-down'] as const;
+const keyboardPreferencesStorageKey = 'glide.adfsKeyboard.preferences';
 const letterRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -25,11 +31,12 @@ const symbolRows = [
   [':', ';', "'", '"', '?', '<', '>', ',', '.'],
 ] as const;
 
-type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste' | 'cycle-size';
+type ArrowAction = (typeof arrowActions)[number];
+type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'toggle-numpad' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste' | 'cycle-size' | ArrowAction;
 type KeyboardStatusKind = 'error' | 'success';
 type KeyboardSizeMode = (typeof keyboardSizeModes)[number];
 
-type InputSelectionDirection = Exclude<HTMLInputElement['selectionDirection'], undefined>;
+type InputSelectionDirection = Exclude<HTMLInputElement['selectionDirection'], undefined | null>;
 
 interface InputSelectionSnapshot {
   direction: InputSelectionDirection;
@@ -51,22 +58,57 @@ interface KeyboardRow {
   keys: KeyboardKey[];
 }
 
+interface KeyboardSideRow {
+  className: string;
+  keys: KeyboardKey[];
+}
+
 interface LegacyCopyDocument {
   execCommand?: (commandId: string, showUI?: boolean, value?: string) => boolean;
 }
 
+interface ResolvedInputSelection {
+  direction: InputSelectionDirection;
+  end: number;
+  start: number;
+}
+
+interface StoredKeyboardPreferences {
+  keyboardSize?: KeyboardSizeMode;
+  numpadVisible?: boolean;
+}
+
 export function installAdfsOverlayKeyboard(doc: Document = document): () => void {
   const activeWindow = doc.defaultView ?? window;
+  const storedPreferences = readStoredKeyboardPreferences(activeWindow);
   let activeInput: HTMLInputElement | null = null;
   let activeSelection: InputSelectionSnapshot | null = null;
   let shiftActive = false;
   let capsLockActive = false;
   let symbolMode = false;
-  let keyboardSize: KeyboardSizeMode = 'compact';
+  let keyboardSize: KeyboardSizeMode = storedPreferences.keyboardSize ?? 'compact';
+  let numpadVisible = storedPreferences.numpadVisible ?? true;
   let lastPointerActivatedButton: HTMLButtonElement | null = null;
 
-  const captureActiveSelection = (input: HTMLInputElement | null): void => {
-    activeSelection = captureInputSelection(input);
+  const persistKeyboardPreferences = (): void => {
+    writeStoredKeyboardPreferences(activeWindow, {
+      keyboardSize,
+      numpadVisible,
+    });
+  };
+
+  const setStoredKeyboardSize = (value: KeyboardSizeMode): void => {
+    keyboardSize = value;
+    persistKeyboardPreferences();
+  };
+
+  const setStoredNumpadVisible = (value: boolean): void => {
+    numpadVisible = value;
+    persistKeyboardPreferences();
+  };
+
+  const captureActiveSelection = (input: HTMLInputElement | null, preferredSnapshot: InputSelectionSnapshot | null = null): void => {
+    activeSelection = captureInputSelection(input, preferredSnapshot ?? activeSelection);
   };
 
   const getTrackedCredentialInput = (): HTMLInputElement | null => {
@@ -106,6 +148,7 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           () => capsLockActive,
           () => symbolMode,
           () => keyboardSize,
+          () => numpadVisible,
           (value) => {
             shiftActive = value;
           },
@@ -115,9 +158,8 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           (value) => {
             symbolMode = value;
           },
-          (value) => {
-            keyboardSize = value;
-          },
+          setStoredKeyboardSize,
+          setStoredNumpadVisible,
           () => activeInput,
           (input) => {
             activeInput = input;
@@ -214,14 +256,16 @@ function createKeyboard(
   getCapsLockActive: () => boolean,
   getSymbolMode: () => boolean,
   getKeyboardSize: () => KeyboardSizeMode,
+  getNumpadVisible: () => boolean,
   setShiftActive: (value: boolean) => void,
   setCapsLockActive: (value: boolean) => void,
   setSymbolMode: (value: boolean) => void,
   setKeyboardSize: (value: KeyboardSizeMode) => void,
+  setNumpadVisible: (value: boolean) => void,
   getActiveInput: () => HTMLInputElement | null,
   setActiveInput: (input: HTMLInputElement | null) => void,
   getSavedSelection: () => InputSelectionSnapshot | null,
-  saveSelection: (input: HTMLInputElement | null) => void,
+  saveSelection: (input: HTMLInputElement | null, preferredSnapshot?: InputSelectionSnapshot | null) => void,
   getLastPointerActivatedButton: () => HTMLButtonElement | null,
   setLastPointerActivatedButton: (button: HTMLButtonElement | null) => void,
 ): HTMLElement {
@@ -291,6 +335,7 @@ function createKeyboard(
 
   const activateButton = (button: HTMLButtonElement): void => {
     const action = button.dataset.action as KeyAction | undefined;
+
     clearStatus();
     const shouldResetShift = handleKey(
       doc,
@@ -301,6 +346,7 @@ function createKeyboard(
       getShiftActive,
       getSymbolMode,
       getKeyboardSize,
+      getNumpadVisible,
       getSavedSelection,
       saveSelection,
       setShiftActive,
@@ -308,6 +354,7 @@ function createKeyboard(
       setCapsLockActive,
       setSymbolMode,
       setKeyboardSize,
+      setNumpadVisible,
       showStatus,
     );
 
@@ -316,8 +363,18 @@ function createKeyboard(
     }
 
     if (shouldRenderAfterAction(action) || shouldResetShift) {
-      renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize());
+      renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize(), getNumpadVisible());
     }
+  };
+
+  const restoreCredentialInputFocus = (): void => {
+    activeWindow.setTimeout(() => {
+      const input = focusInput(getPrimaryInput(doc, getActiveInput()));
+
+      if (input) {
+        setActiveInput(input);
+      }
+    }, 0);
   };
 
   keyboard.addEventListener('pointerdown', (event) => {
@@ -394,12 +451,15 @@ function createKeyboard(
 
     setPressedPointerButton(null);
     setLastPointerActivatedButton(button);
+    event.preventDefault();
     activeWindow.setTimeout(() => {
       if (getLastPointerActivatedButton() === button) {
         setLastPointerActivatedButton(null);
       }
     }, 0);
+
     activateButton(button);
+    restoreCredentialInputFocus();
   });
 
   keyboard.addEventListener('pointercancel', (event) => {
@@ -428,8 +488,11 @@ function createKeyboard(
       return;
     }
 
+    event.preventDefault();
+
     if (getLastPointerActivatedButton() === button) {
       setLastPointerActivatedButton(null);
+      restoreCredentialInputFocus();
       return;
     }
 
@@ -439,10 +502,12 @@ function createKeyboard(
     }
 
     clearPressingState(button);
+
     activateButton(button);
+    restoreCredentialInputFocus();
   });
 
-  renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize());
+  renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize(), getNumpadVisible());
   return keyboard;
 }
 
@@ -460,6 +525,7 @@ function renderKeyboard(
   capsLockActive: boolean,
   symbolMode: boolean,
   keyboardSize: KeyboardSizeMode,
+  numpadVisible: boolean,
 ): void {
   const panel = keyboard.querySelector(`.${panelClass}`);
 
@@ -468,9 +534,17 @@ function renderKeyboard(
   }
 
   keyboard.dataset.size = keyboardSize;
+  keyboard.dataset.numpadVisible = numpadVisible ? 'true' : 'false';
   panel.innerHTML = '';
 
-  for (const rowValue of getRows(shiftActive, capsLockActive, symbolMode)) {
+  const layout = doc.createElement('div');
+  const main = doc.createElement('div');
+  const side = doc.createElement('div');
+  layout.className = layoutClass;
+  main.className = mainClass;
+  side.className = sideClass;
+
+  for (const rowValue of getRows(shiftActive, capsLockActive, symbolMode, numpadVisible)) {
     const row = doc.createElement('div');
     row.className = `${rowClass}${rowValue.className ? ` ${rowValue.className}` : ''}`;
 
@@ -497,11 +571,46 @@ function renderKeyboard(
       row.append(button);
     }
 
-    panel.append(row);
+    main.append(row);
   }
+
+  if (numpadVisible) {
+    for (const rowValue of getSideRows()) {
+      const row = doc.createElement('div');
+      row.className = `${sideRowClass}${rowValue.className ? ` ${rowValue.className}` : ''}`;
+
+      for (const key of rowValue.keys) {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.tabIndex = -1;
+        button.className = `${keyClass}${key.className ? ` ${key.className}` : ''}`;
+        button.textContent = key.label;
+
+        if (key.action) {
+          button.dataset.action = key.action;
+        }
+
+        if (key.value) {
+          button.dataset.value = key.value;
+        }
+
+        row.append(button);
+      }
+
+      side.append(row);
+    }
+  }
+
+  layout.append(main);
+
+  if (numpadVisible) {
+    layout.append(side);
+  }
+
+  panel.append(layout);
 }
 
-function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: boolean): KeyboardRow[] {
+function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: boolean, numpadVisible: boolean): KeyboardRow[] {
   if (symbolMode) {
     return [
       {
@@ -531,7 +640,8 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
       {
         className: '',
         keys: [
-          createActionKey('ABC', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-left`),
+          createActionKey('ABC', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-toggle`),
+          createActionKey('Numpad', 'toggle-numpad', `${keyClass}--control ${keyClass}--bottom-toggle`),
           createActionKey('Space', 'space', `${keyClass}--space`),
           createActionKey('Enter', 'enter', `${keyClass}--enter`),
         ],
@@ -556,29 +666,62 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
       className: '',
       keys: [createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column${capsLockActive ? ` ${keyClass}--active` : ''}`)]
         .concat(letterRows[2].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
-        .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
+        .concat([createActionKey('Enter', 'enter', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
       className: '',
       keys: [createActionKey('Shift', 'shift', `${keyClass}--control ${keyClass}--shift-left${shiftActive ? ` ${keyClass}--active` : ''}`)]
         .concat(letterRows[3].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
         .concat([
-          createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`),
+          createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`),
         ]),
     },
     {
       className: '',
       keys: [
-        createActionKey('&123', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-left`),
+        createActionKey('&123', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-toggle`),
+        createActionKey('Numpad', 'toggle-numpad', `${keyClass}--control ${keyClass}--bottom-toggle`),
         createActionKey('Space', 'space', `${keyClass}--space`),
-        createActionKey('Enter', 'enter', `${keyClass}--enter`),
+        createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`),
+      ],
+    },
+  ];
+}
+
+function getSideRows(): KeyboardSideRow[] {
+  return [
+    {
+      className: '',
+      keys: ['7', '8', '9'].map((value) => createValueKey(value)),
+    },
+    {
+      className: '',
+      keys: ['4', '5', '6'].map((value) => createValueKey(value)),
+    },
+    {
+      className: '',
+      keys: ['1', '2', '3'].map((value) => createValueKey(value)),
+    },
+    {
+      className: '',
+      keys: [
+        createValueKey('0'),
+        createActionKey('^', 'arrow-up', `${keyClass}--control ${keyClass}--arrow`),
+      ],
+    },
+    {
+      className: '',
+      keys: [
+        createActionKey('<', 'arrow-left', `${keyClass}--control ${keyClass}--arrow`),
+        createActionKey('v', 'arrow-down', `${keyClass}--control ${keyClass}--arrow`),
+        createActionKey('>', 'arrow-right', `${keyClass}--control ${keyClass}--arrow`),
       ],
     },
   ];
 }
 
 function shouldRenderAfterAction(action: KeyAction | undefined): boolean {
-  return action === 'shift' || action === 'capslock' || action === 'toggle-mode' || action === 'cycle-size';
+  return action === 'shift' || action === 'capslock' || action === 'toggle-mode' || action === 'toggle-numpad' || action === 'cycle-size';
 }
 
 function createValueKey(value: string): KeyboardKey {
@@ -606,18 +749,21 @@ function handleKey(
   getShiftActive: () => boolean,
   getSymbolMode: () => boolean,
   getKeyboardSize: () => KeyboardSizeMode,
+  getNumpadVisible: () => boolean,
   getSavedSelection: () => InputSelectionSnapshot | null,
-  saveSelection: (input: HTMLInputElement | null) => void,
+  saveSelection: (input: HTMLInputElement | null, preferredSnapshot?: InputSelectionSnapshot | null) => void,
   setShiftActive: (value: boolean) => void,
   getCapsLockActive: () => boolean,
   setCapsLockActive: (value: boolean) => void,
   setSymbolMode: (value: boolean) => void,
   setKeyboardSize: (value: KeyboardSizeMode) => void,
+  setNumpadVisible: (value: boolean) => void,
   showStatus: (message: string, kind: KeyboardStatusKind) => void,
 ): boolean {
   const savedSelection = getSavedSelection();
   const input = focusInput(getPrimaryInput(doc, activeInput));
-  if (action !== 'copy' && action !== 'backspace') {
+
+  if (action !== 'copy' && action !== 'backspace' && !isArrowAction(action)) {
     restoreInputSelection(input, savedSelection);
   }
   setActiveInput(input);
@@ -643,9 +789,21 @@ function handleKey(
     return false;
   }
 
+  if (action === 'toggle-numpad') {
+    setNumpadVisible(!getNumpadVisible());
+    return false;
+  }
+
   if (action === 'tab') {
     focusAdjacentCredentialInput(doc, input, getShiftActive() ? -1 : 1, setActiveInput);
     return getShiftActive();
+  }
+
+  if (isArrowAction(action)) {
+    const nextSelection = moveInputCaret(input, action, savedSelection);
+    saveSelection(input, nextSelection);
+
+    return false;
   }
 
   if (action === 'enter') {
@@ -662,42 +820,43 @@ function handleKey(
   }
 
   if (action === 'select-all') {
-    selectAllInputText(input);
-    saveSelection(input);
+    const nextSelection = selectAllInputText(input);
+    saveSelection(input, nextSelection);
     return false;
   }
 
   if (action === 'copy') {
+    if (savedSelection?.input === input) {
+      applyInputSelectionRange(input, savedSelection.start, savedSelection.end, savedSelection.direction);
+    }
+
     void copySelectedText(input, showStatus);
     return false;
   }
 
   if (action === 'paste') {
-    void pasteClipboardText(input, saveSelection);
+    void pasteClipboardText(input, savedSelection, saveSelection);
     return false;
   }
 
   if (action === 'backspace') {
-    deleteInputSelectionOrCharacter(input);
-    saveSelection(input);
+    const nextSelection = deleteInputSelectionOrCharacter(input, savedSelection);
+    saveSelection(input, nextSelection);
     return false;
   }
 
-  mutateInput(input, (inputValue, selectionStart, selectionEnd) => {
+  const nextSelection = mutateInput(input, savedSelection, (inputValue, selectionStart, selectionEnd) => {
     const text = action === 'space' ? ' ' : value ?? '';
     return { nextValue: inputValue.slice(0, selectionStart) + text + inputValue.slice(selectionEnd), nextPosition: selectionStart + text.length };
   });
-  saveSelection(input);
+  saveSelection(input, nextSelection);
 
   return Boolean(value && !getSymbolMode() && getShiftActive() && /^[a-z]$/i.test(value));
 }
 
-function selectAllInputText(input: HTMLInputElement): void {
-  try {
-    input.setSelectionRange(0, input.value.length);
-  } catch {
-    input.select();
-  }
+function selectAllInputText(input: HTMLInputElement): InputSelectionSnapshot {
+  applyInputSelectionRange(input, 0, input.value.length);
+  return createInputSelectionSnapshot(input, 0, input.value.length, 'none');
 }
 
 async function copySelectedText(
@@ -718,12 +877,17 @@ async function copySelectedText(
 
 function deleteInputSelectionOrCharacter(
   input: HTMLInputElement,
-): void {
-  if (deleteCurrentInputSelection(input.ownerDocument, input)) {
-    return;
+  selectionSnapshot: InputSelectionSnapshot | null,
+): InputSelectionSnapshot | null {
+  if (selectionSnapshot?.input === input && selectionSnapshot.start !== selectionSnapshot.end) {
+    applyInputSelectionRange(input, selectionSnapshot.start, selectionSnapshot.end, selectionSnapshot.direction);
   }
 
-  mutateInput(input, (inputValue, selectionStart, selectionEnd) => {
+  if (deleteCurrentInputSelection(input.ownerDocument, input)) {
+    return captureInputSelection(input, selectionSnapshot);
+  }
+
+  return mutateInput(input, selectionSnapshot, (inputValue, selectionStart, selectionEnd) => {
     if (selectionStart !== selectionEnd) {
       return { nextValue: inputValue.slice(0, selectionStart) + inputValue.slice(selectionEnd), nextPosition: selectionStart };
     }
@@ -736,7 +900,64 @@ function deleteInputSelectionOrCharacter(
   });
 }
 
-async function pasteClipboardText(input: HTMLInputElement, saveSelection: (input: HTMLInputElement | null) => void): Promise<void> {
+function moveInputCaret(input: HTMLInputElement | null, action: ArrowAction, selectionSnapshot: InputSelectionSnapshot | null): InputSelectionSnapshot | null {
+  if (!input) {
+    return null;
+  }
+
+  const selection = resolveInputSelection(input, selectionSnapshot);
+  const valueLength = input.value.length;
+  const selectionStart = selection.start;
+  const selectionEnd = selection.end;
+  let nextPosition = selectionEnd;
+
+  if (action === 'arrow-left') {
+    nextPosition = selectionStart === selectionEnd ? Math.max(selectionStart - 1, 0) : selectionStart;
+  } else if (action === 'arrow-right') {
+    nextPosition = selectionStart === selectionEnd ? Math.min(selectionEnd + 1, valueLength) : selectionEnd;
+  } else if (action === 'arrow-up') {
+    nextPosition = 0;
+  } else if (action === 'arrow-down') {
+    nextPosition = valueLength;
+  }
+
+  applyInputSelectionRange(input, nextPosition, nextPosition);
+
+  scheduleArrowCaretStabilization(input, nextPosition, 'timeout');
+
+  input.ownerDocument.defaultView?.requestAnimationFrame(() => {
+    scheduleArrowCaretStabilization(input, nextPosition, 'animation-frame');
+  });
+
+  input.ownerDocument.defaultView?.setTimeout(() => {
+    scheduleArrowCaretStabilization(input, nextPosition, 'timeout-50ms');
+  }, 50);
+
+  return createInputSelectionSnapshot(input, nextPosition, nextPosition, selection.direction);
+}
+
+function applyInputSelectionRange(
+  input: HTMLInputElement,
+  selectionStart: number,
+  selectionEnd: number,
+  direction: InputSelectionDirection = 'none',
+): void {
+  const applied = withInputSelectionAccess(input, () => {
+    input.setSelectionRange(selectionStart, selectionEnd, direction);
+  });
+
+  if (!applied) {
+    return;
+  }
+
+  input.dispatchEvent(new Event('select', { bubbles: true, composed: true }));
+}
+
+async function pasteClipboardText(
+  input: HTMLInputElement,
+  selectionSnapshot: InputSelectionSnapshot | null,
+  saveSelection: (input: HTMLInputElement | null, preferredSnapshot?: InputSelectionSnapshot | null) => void,
+): Promise<void> {
   try {
     const clipboard = input.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard;
 
@@ -750,11 +971,11 @@ async function pasteClipboardText(input: HTMLInputElement, saveSelection: (input
       return;
     }
 
-    mutateInput(input, (inputValue, selectionStart, selectionEnd) => ({
+    const nextSelection = mutateInput(input, selectionSnapshot, (inputValue, selectionStart, selectionEnd) => ({
       nextValue: inputValue.slice(0, selectionStart) + clipboardText + inputValue.slice(selectionEnd),
       nextPosition: selectionStart + clipboardText.length,
     }));
-    saveSelection(input);
+    saveSelection(input, nextSelection);
   } catch {
     // Ignore clipboard read failures so keyboard input still works.
   }
@@ -794,43 +1015,38 @@ function deleteCurrentInputSelection(doc: Document, input: HTMLInputElement): bo
   }
 }
 
-function captureInputSelection(input: HTMLInputElement | null): InputSelectionSnapshot | null {
+function captureInputSelection(input: HTMLInputElement | null, fallbackSnapshot: InputSelectionSnapshot | null = null): InputSelectionSnapshot | null {
   if (!isCredentialInput(input)) {
     return null;
   }
 
-  return {
-    direction: input.selectionDirection ?? 'none',
-    end: input.selectionEnd ?? input.value.length,
-    input,
-    start: input.selectionStart ?? input.value.length,
-    value: input.value,
-  };
+  const selection = resolveInputSelection(input, fallbackSnapshot);
+  return createInputSelectionSnapshot(input, selection.start, selection.end, selection.direction);
 }
 
 function mutateInput(
   input: HTMLInputElement,
+  selectionSnapshot: InputSelectionSnapshot | null,
   mutate: (value: string, selectionStart: number, selectionEnd: number) => { nextValue: string; nextPosition: number } | null,
-): void {
+): InputSelectionSnapshot | null {
   const value = input.value;
-  const selectionStart = input.selectionStart ?? value.length;
-  const selectionEnd = input.selectionEnd ?? value.length;
+  const selection = resolveInputSelection(input, selectionSnapshot);
+  const selectionStart = selection.start;
+  const selectionEnd = selection.end;
   const next = mutate(value, selectionStart, selectionEnd);
 
   if (!next) {
-    return;
+    return selectionSnapshot;
   }
 
   setInputValue(input, next.nextValue);
 
-  try {
-    input.setSelectionRange(next.nextPosition, next.nextPosition);
-  } catch {
-    // Ignore selection failures for input variants that do not expose selection ranges.
-  }
+  applyInputSelectionRange(input, next.nextPosition, next.nextPosition, selection.direction);
 
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+
+  return createInputSelectionSnapshot(input, next.nextPosition, next.nextPosition, selection.direction);
 }
 
 function restoreInputSelection(input: HTMLInputElement | null, snapshot: InputSelectionSnapshot | null): void {
@@ -838,11 +1054,7 @@ function restoreInputSelection(input: HTMLInputElement | null, snapshot: InputSe
     return;
   }
 
-  try {
-    input.setSelectionRange(snapshot.start, snapshot.end, snapshot.direction ?? 'none');
-  } catch {
-    // Ignore selection failures for input variants that do not expose selection ranges.
-  }
+  applyInputSelectionRange(input, snapshot.start, snapshot.end, snapshot.direction);
 }
 
 function setInputValue(input: HTMLInputElement, value: string): void {
@@ -856,6 +1068,98 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   }
 
   input.value = value;
+}
+
+function createInputSelectionSnapshot(
+  input: HTMLInputElement,
+  start: number,
+  end: number,
+  direction: InputSelectionDirection,
+): InputSelectionSnapshot {
+  return {
+    direction,
+    end,
+    input,
+    start,
+    value: input.value,
+  };
+}
+
+function resolveInputSelection(input: HTMLInputElement, fallbackSnapshot: InputSelectionSnapshot | null): ResolvedInputSelection {
+  const nativeSelection = readNativeInputSelection(input);
+
+  if (nativeSelection) {
+    return nativeSelection;
+  }
+
+  if (fallbackSnapshot?.input === input) {
+    const clampedStart = Math.min(fallbackSnapshot.start, input.value.length);
+    const clampedEnd = Math.min(fallbackSnapshot.end, input.value.length);
+
+    return {
+      direction: fallbackSnapshot.direction,
+      end: clampedEnd,
+      start: clampedStart,
+    };
+  }
+
+  return {
+    direction: 'none',
+    end: input.value.length,
+    start: input.value.length,
+  };
+}
+
+function readNativeInputSelection(input: HTMLInputElement): ResolvedInputSelection | null {
+  const selectionStart = input.selectionStart;
+  const selectionEnd = input.selectionEnd;
+
+  if (selectionStart === null || selectionEnd === null) {
+    return null;
+  }
+
+  return {
+    direction: input.selectionDirection ?? 'none',
+    end: selectionEnd,
+    start: selectionStart,
+  };
+}
+
+function withInputSelectionAccess(input: HTMLInputElement, callback: () => void): boolean {
+  try {
+    callback();
+    return true;
+  } catch {
+    return withTemporaryTextSelectionType(input, callback);
+  }
+}
+
+function withTemporaryTextSelectionType(input: HTMLInputElement, callback: () => void): boolean {
+  if (!canTemporarilySwitchInputTypeForSelection(input)) {
+    return false;
+  }
+
+  const originalTypeAttribute = input.getAttribute('type');
+
+  try {
+    input.setAttribute('type', 'text');
+    callback();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (originalTypeAttribute === null) {
+      input.removeAttribute('type');
+    } else {
+      input.setAttribute('type', originalTypeAttribute);
+    }
+
+    focusInput(input);
+  }
+}
+
+function canTemporarilySwitchInputTypeForSelection(input: HTMLInputElement): boolean {
+  return input.type === 'email';
 }
 
 function isAdfsPage(doc: Document): boolean {
@@ -970,6 +1274,37 @@ function stepKeyboardSize(currentSize: KeyboardSizeMode, delta: -1 | 1): Keyboar
   return keyboardSizeModes[nextIndex] ?? currentSize;
 }
 
+function readStoredKeyboardPreferences(activeWindow: Window): StoredKeyboardPreferences {
+  try {
+    const storedValue = activeWindow.localStorage.getItem(keyboardPreferencesStorageKey);
+
+    if (!storedValue) {
+      return {};
+    }
+
+    const parsedValue = JSON.parse(storedValue) as StoredKeyboardPreferences;
+
+    return {
+      ...(isKeyboardSizeMode(parsedValue.keyboardSize) ? { keyboardSize: parsedValue.keyboardSize } : {}),
+      ...(typeof parsedValue.numpadVisible === 'boolean' ? { numpadVisible: parsedValue.numpadVisible } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredKeyboardPreferences(activeWindow: Window, preferences: StoredKeyboardPreferences): void {
+  try {
+    activeWindow.localStorage.setItem(keyboardPreferencesStorageKey, JSON.stringify(preferences));
+  } catch {
+    // Ignore storage failures so the keyboard remains usable.
+  }
+}
+
+function isKeyboardSizeMode(value: unknown): value is KeyboardSizeMode {
+  return typeof value === 'string' && keyboardSizeModes.includes(value as KeyboardSizeMode);
+}
+
 function ensureStyles(doc: Document): void {
   if (doc.getElementById(styleId)) {
     return;
@@ -979,19 +1314,20 @@ function ensureStyles(doc: Document): void {
   style.id = styleId;
   style.textContent = `
     .${rootClass} {
-      --glide-adfs-keyboard-width: min(calc(100vw - 24px), 720px);
+      --glide-adfs-keyboard-width: min(calc(100vw - 24px), 1020px);
       --glide-adfs-keyboard-bottom: 14px;
       --glide-adfs-keyboard-panel-padding: 12px;
       --glide-adfs-keyboard-row-gap: 8px;
       --glide-adfs-keyboard-key-height: 48px;
       --glide-adfs-keyboard-key-font-size: 16px;
       --glide-adfs-keyboard-wide-font-size: 15px;
+      --glide-adfs-keyboard-side-width: 220px;
       --glide-adfs-keyboard-space-flex: 5.2 1 0;
       --glide-adfs-keyboard-enter-flex: 1.6 1 0;
       --glide-adfs-keyboard-control-flex: 1.35 1 0;
       --glide-adfs-keyboard-wide-flex: 1.7 1 0;
       --glide-adfs-keyboard-left-column-flex: 1.95 1 0;
-      --glide-adfs-keyboard-bottom-left-flex: 2.35 1 0;
+      --glide-adfs-keyboard-bottom-toggle-flex: 1.55 1 0;
       --glide-adfs-keyboard-shift-left-flex: 2.85 1 0;
       --glide-adfs-keyboard-size-control-flex: 0.9 1 0;
       position: fixed;
@@ -1003,19 +1339,20 @@ function ensureStyles(doc: Document): void {
       pointer-events: none;
     }
     .${rootClass}[data-size="comfortable"] {
-      --glide-adfs-keyboard-width: min(calc(100vw - 18px), 920px);
+      --glide-adfs-keyboard-width: min(calc(100vw - 18px), 1180px);
       --glide-adfs-keyboard-bottom: 10px;
       --glide-adfs-keyboard-panel-padding: 16px;
       --glide-adfs-keyboard-row-gap: 10px;
       --glide-adfs-keyboard-key-height: 60px;
       --glide-adfs-keyboard-key-font-size: 18px;
       --glide-adfs-keyboard-wide-font-size: 16px;
+      --glide-adfs-keyboard-side-width: 256px;
       --glide-adfs-keyboard-space-flex: 5.8 1 0;
       --glide-adfs-keyboard-enter-flex: 1.8 1 0;
       --glide-adfs-keyboard-control-flex: 1.45 1 0;
       --glide-adfs-keyboard-wide-flex: 1.85 1 0;
       --glide-adfs-keyboard-left-column-flex: 2.15 1 0;
-      --glide-adfs-keyboard-bottom-left-flex: 2.55 1 0;
+      --glide-adfs-keyboard-bottom-toggle-flex: 1.72 1 0;
       --glide-adfs-keyboard-shift-left-flex: 3.05 1 0;
       --glide-adfs-keyboard-size-control-flex: 1.05 1 0;
     }
@@ -1027,12 +1364,13 @@ function ensureStyles(doc: Document): void {
       --glide-adfs-keyboard-key-height: 72px;
       --glide-adfs-keyboard-key-font-size: 20px;
       --glide-adfs-keyboard-wide-font-size: 18px;
+      --glide-adfs-keyboard-side-width: 300px;
       --glide-adfs-keyboard-space-flex: 6.4 1 0;
       --glide-adfs-keyboard-enter-flex: 2 1 0;
       --glide-adfs-keyboard-control-flex: 1.55 1 0;
       --glide-adfs-keyboard-wide-flex: 2.1 1 0;
       --glide-adfs-keyboard-left-column-flex: 2.4 1 0;
-      --glide-adfs-keyboard-bottom-left-flex: 2.9 1 0;
+      --glide-adfs-keyboard-bottom-toggle-flex: 1.95 1 0;
       --glide-adfs-keyboard-shift-left-flex: 3.35 1 0;
       --glide-adfs-keyboard-size-control-flex: 1.15 1 0;
     }
@@ -1072,6 +1410,22 @@ function ensureStyles(doc: Document): void {
       backdrop-filter: blur(6px);
       box-sizing: border-box;
     }
+    .${layoutClass} {
+      display: flex;
+      gap: var(--glide-adfs-keyboard-row-gap);
+      align-items: stretch;
+    }
+    .${mainClass} {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .${sideClass} {
+      display: flex;
+      flex-direction: column;
+      gap: var(--glide-adfs-keyboard-row-gap);
+      width: var(--glide-adfs-keyboard-side-width);
+      flex: 0 0 var(--glide-adfs-keyboard-side-width);
+    }
     .${rowClass} {
       display: flex;
       gap: var(--glide-adfs-keyboard-row-gap);
@@ -1079,6 +1433,11 @@ function ensureStyles(doc: Document): void {
     }
     .${rowClass}:first-child {
       margin-top: 0;
+    }
+    .${sideRowClass} {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--glide-adfs-keyboard-row-gap);
     }
     .${keyClass} {
       appearance: none;
@@ -1134,14 +1493,17 @@ function ensureStyles(doc: Document): void {
     .${keyClass}--left-column {
       flex: var(--glide-adfs-keyboard-left-column-flex);
     }
-    .${keyClass}--bottom-left {
-      flex: var(--glide-adfs-keyboard-bottom-left-flex);
+    .${keyClass}--bottom-toggle {
+      flex: var(--glide-adfs-keyboard-bottom-toggle-flex);
     }
     .${keyClass}--shift-left {
       flex: var(--glide-adfs-keyboard-shift-left-flex);
     }
     .${keyClass}--size-control {
       flex: var(--glide-adfs-keyboard-size-control-flex);
+    }
+    .${keyClass}--arrow {
+      font-size: max(13px, calc(var(--glide-adfs-keyboard-key-font-size) - 1px));
     }
     .${keyClass}--active {
       background: #575757;
@@ -1155,9 +1517,19 @@ function ensureStyles(doc: Document): void {
       .${panelClass} {
         padding: max(10px, calc(var(--glide-adfs-keyboard-panel-padding) - 2px));
       }
+      .${layoutClass} {
+        flex-direction: column;
+      }
+      .${sideClass} {
+        width: 100%;
+        flex: 0 0 auto;
+      }
       .${rowClass} {
         gap: max(6px, calc(var(--glide-adfs-keyboard-row-gap) - 2px));
         margin-top: max(6px, calc(var(--glide-adfs-keyboard-row-gap) - 2px));
+      }
+      .${sideRowClass} {
+        gap: max(6px, calc(var(--glide-adfs-keyboard-row-gap) - 2px));
       }
       .${keyClass} {
         min-height: max(44px, calc(var(--glide-adfs-keyboard-key-height) - 4px));
@@ -1182,4 +1554,20 @@ function createQueuedSync(activeWindow: Window, callback: () => void): () => voi
       callback();
     });
   };
+}
+
+function isArrowAction(action: KeyAction | undefined): action is ArrowAction {
+  return action === 'arrow-left' || action === 'arrow-right' || action === 'arrow-up' || action === 'arrow-down';
+}
+
+function scheduleArrowCaretStabilization(
+  input: HTMLInputElement,
+  nextPosition: number,
+  stage: 'timeout' | 'animation-frame' | 'timeout-50ms',
+): void {
+  if (input.ownerDocument.activeElement !== input) {
+    focusInput(input);
+  }
+
+  applyInputSelectionRange(input, nextPosition, nextPosition);
 }
