@@ -13,6 +13,14 @@ import { installUnitsInToteNumpad } from '../src/features/units-in-tote-numpad';
 describe('page enhancements', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: undefined,
+    });
     document.head.innerHTML = '';
     document.body.innerHTML = '';
     localStorage.clear();
@@ -302,15 +310,19 @@ describe('page enhancements', () => {
   });
 
   it('supports select all, copy, and paste for the active ADFS field', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
     const readText = vi.fn().mockResolvedValue('replaced');
+    const execCommand = vi.fn().mockReturnValue(true);
 
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: {
         readText,
-        writeText,
       },
+    });
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
     });
 
     document.body.innerHTML = `
@@ -332,7 +344,9 @@ describe('page enhancements', () => {
     document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
     await flushMicrotasks();
 
-    expect(writeText).toHaveBeenCalledWith('original value');
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.getAttribute('data-kind')).toBe('success');
 
     document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="paste"]')?.click();
     await flushMicrotasks();
@@ -341,6 +355,465 @@ describe('page enhancements', () => {
     expect(usernameInput.value).toBe('replaced');
     expect(usernameInput.selectionStart).toBe('replaced'.length);
     expect(usernameInput.selectionEnd).toBe('replaced'.length);
+
+    cleanup();
+  });
+
+  it('copies through document execCommand for the ADFS keyboard', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="select-all"]')?.click();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(usernameInput.selectionStart).toBe(0);
+    expect(usernameInput.selectionEnd).toBe(usernameInput.value.length);
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.getAttribute('data-kind')).toBe('success');
+
+    cleanup();
+  });
+
+  it('shows an error when copy is pressed without a selection in the active ADFS field', async () => {
+    const execCommand = vi.fn().mockReturnValue(false);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(0, 0);
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Select text before copying.');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.getAttribute('data-kind')).toBe('error');
+
+    cleanup();
+  });
+
+  it('copies the current ADFS browser selection when the live selection collapses during copy activation', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="select-all"]')?.click();
+
+    Object.defineProperty(usernameInput, 'selectionStart', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+    Object.defineProperty(usernameInput, 'selectionEnd', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.getAttribute('data-kind')).toBe('success');
+
+    cleanup();
+  });
+
+  it('copies after manual selectionchange events before copy', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(0, 2);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    Object.defineProperty(usernameInput, 'selectionStart', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+    Object.defineProperty(usernameInput, 'selectionEnd', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+
+    cleanup();
+  });
+
+  it('copies after mouseup before copy activation', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(3, 8);
+    usernameInput.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+
+    Object.defineProperty(usernameInput, 'selectionStart', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+    Object.defineProperty(usernameInput, 'selectionEnd', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+
+    cleanup();
+  });
+
+  it('copies even when activeElement drifts during manual selection', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const activeElementDescriptor = Object.getOwnPropertyDescriptor(document, 'activeElement');
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(0, 4);
+
+    Object.defineProperty(document, 'activeElement', {
+      configurable: true,
+      get: () => document.body,
+    });
+
+    document.dispatchEvent(new Event('selectionchange'));
+
+    Object.defineProperty(usernameInput, 'selectionStart', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+    Object.defineProperty(usernameInput, 'selectionEnd', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+
+    if (activeElementDescriptor) {
+      Object.defineProperty(document, 'activeElement', activeElementDescriptor);
+    } else {
+      Reflect.deleteProperty(document, 'activeElement');
+    }
+
+    cleanup();
+  });
+
+  it('copies after button mousedown before focus shifts', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const copyButton = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]') as HTMLButtonElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(2, 6);
+    copyButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+
+    Object.defineProperty(usernameInput, 'selectionStart', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+    Object.defineProperty(usernameInput, 'selectionEnd', {
+      configurable: true,
+      get: () => usernameInput.value.length,
+    });
+
+    copyButton.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+
+    cleanup();
+  });
+
+  it('falls back to copying the current ADFS browser selection when tracked ranges are collapsed', async () => {
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(0, 0);
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('Copied to clipboard.');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.getAttribute('data-kind')).toBe('success');
+
+    cleanup();
+  });
+
+  it('deletes the live ADFS selection on backspace when the saved selection is collapsed', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const backspaceButton = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="backspace"]') as HTMLButtonElement;
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(0, 0);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    usernameInput.setSelectionRange(2, 6);
+    backspaceButton.click();
+
+    expect(usernameInput.value).toBe('oral value');
+    expect(usernameInput.selectionStart).toBe(2);
+    expect(usernameInput.selectionEnd).toBe(2);
+
+    cleanup();
+  });
+
+  it('falls back to native delete on backspace when tracked ADFS ranges are collapsed', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="test" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const backspaceButton = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="backspace"]') as HTMLButtonElement;
+    const execCommand = vi.fn().mockImplementation((command: string) => {
+      if (command !== 'delete') {
+        return false;
+      }
+
+      usernameInput.value = '';
+      usernameInput.setSelectionRange(0, 0);
+      return true;
+    });
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    usernameInput.focus();
+    usernameInput.setSelectionRange(4, 4);
+    document.dispatchEvent(new Event('selectionchange'));
+    backspaceButton.click();
+
+    expect(execCommand).toHaveBeenCalledWith('delete');
+    expect(usernameInput.value).toBe('');
+    expect(document.querySelector('.glide-adfs-keyboard__status')?.textContent).toBe('');
+
+    cleanup();
+  });
+
+  it('preserves the active ADFS selection across pointer-driven copy and backspace actions', async () => {
+    const execCommand = vi.fn().mockImplementation((command: string) => {
+      if (command === 'copy') {
+        return true;
+      }
+
+      if (command === 'delete') {
+        usernameInput.value = '';
+        usernameInput.setSelectionRange(0, 0);
+        return true;
+      }
+
+      return false;
+    });
+
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand,
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    pressPointerKey('.glide-adfs-keyboard__key[data-action="select-all"]');
+    expect(usernameInput.selectionStart).toBe(0);
+    expect(usernameInput.selectionEnd).toBe(usernameInput.value.length);
+
+    pressPointerKey('.glide-adfs-keyboard__key[data-action="copy"]');
+    await flushMicrotasks();
+
+    expect(execCommand).toHaveBeenCalledWith('copy');
+
+    pressPointerKey('.glide-adfs-keyboard__key[data-action="backspace"]');
+
+    expect(execCommand).toHaveBeenCalledWith('delete');
+    expect(usernameInput.value).toBe('');
+    expect(usernameInput.selectionStart).toBe(0);
+    expect(usernameInput.selectionEnd).toBe(0);
+
+    cleanup();
+  });
+
+  it('moves backward through ADFS credential fields on Shift+Tab', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const passwordInput = document.getElementById('passwordInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="tab"]')?.click();
+
+    expect(document.activeElement).toBe(passwordInput);
+
+    document.querySelectorAll<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="shift"]')[0]?.click();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="tab"]')?.click();
+
+    expect(document.activeElement).toBe(usernameInput);
+    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="shift"]')?.getAttribute('aria-pressed')).toBe('false');
 
     cleanup();
   });

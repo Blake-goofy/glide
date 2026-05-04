@@ -2,6 +2,7 @@ const rootClass = 'glide-adfs-keyboard';
 const panelClass = `${rootClass}__panel`;
 const rowClass = `${rootClass}__row`;
 const keyClass = `${rootClass}__key`;
+const statusClass = `${rootClass}__status`;
 const styleId = `${rootClass}-style`;
 const formId = 'loginForm';
 const submitId = 'submitButton';
@@ -9,6 +10,7 @@ const credentialSelector = '#userNameInput, #passwordInput';
 const pressedBackgroundColor = '#1f1f1f';
 const pressedBoxShadow = 'inset 0 2px 4px rgba(0, 0, 0, 0.34), 0 0 0 rgba(0, 0, 0, 0.12)';
 const pressedTransform = 'translateY(3px)';
+const statusDismissDelayMs = 2500;
 const letterRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -23,6 +25,17 @@ const symbolRows = [
 ] as const;
 
 type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste';
+type KeyboardStatusKind = 'error' | 'success';
+
+type InputSelectionDirection = Exclude<HTMLInputElement['selectionDirection'], undefined>;
+
+interface InputSelectionSnapshot {
+  direction: InputSelectionDirection;
+  end: number;
+  input: HTMLInputElement;
+  start: number;
+  value: string;
+}
 
 interface KeyboardKey {
   action?: KeyAction;
@@ -36,13 +49,34 @@ interface KeyboardRow {
   keys: KeyboardKey[];
 }
 
+interface LegacyCopyDocument {
+  execCommand?: (commandId: string, showUI?: boolean, value?: string) => boolean;
+}
+
 export function installAdfsOverlayKeyboard(doc: Document = document): () => void {
   const activeWindow = doc.defaultView ?? window;
   let activeInput: HTMLInputElement | null = null;
+  let activeSelection: InputSelectionSnapshot | null = null;
   let shiftActive = false;
   let capsLockActive = false;
   let symbolMode = false;
   let lastPointerActivatedButton: HTMLButtonElement | null = null;
+
+  const captureActiveSelection = (input: HTMLInputElement | null): void => {
+    activeSelection = captureInputSelection(input);
+  };
+
+  const getTrackedCredentialInput = (): HTMLInputElement | null => {
+    if (isCredentialInput(activeInput)) {
+      return activeInput;
+    }
+
+    if (isCredentialInput(doc.activeElement)) {
+      return doc.activeElement;
+    }
+
+    return null;
+  };
 
   const syncKeyboard = (): void => {
     const existing = doc.querySelector(`.${rootClass}`);
@@ -58,6 +92,7 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
 
     ensureStyles(doc);
     activeInput = focusInput(getPrimaryInput(doc, activeInput));
+    captureActiveSelection(activeInput);
 
     if (!existing) {
       doc.body.append(
@@ -79,7 +114,10 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           () => activeInput,
           (input) => {
             activeInput = input;
+            captureActiveSelection(input);
           },
+          () => activeSelection,
+          captureActiveSelection,
           () => lastPointerActivatedButton,
           (button) => {
             lastPointerActivatedButton = button;
@@ -94,17 +132,52 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
   const handleFocusIn = (event: FocusEvent): void => {
     if (isCredentialInput(event.target)) {
       activeInput = event.target;
+      captureActiveSelection(activeInput);
       queueSync();
     }
   };
   const handleMouseDown = (event: MouseEvent): void => {
     if (isCredentialInput(event.target)) {
       activeInput = event.target;
+      captureActiveSelection(activeInput);
     }
+  };
+  const handlePointerSelectionCommit = (): void => {
+    const trackedInput = getTrackedCredentialInput();
+
+    if (!trackedInput) {
+      return;
+    }
+
+    activeInput = trackedInput;
+    captureActiveSelection(activeInput);
+  };
+  const handleInputSelectionChange = (event: Event): void => {
+    if (!isCredentialInput(event.target)) {
+      return;
+    }
+
+    activeInput = event.target;
+    captureActiveSelection(activeInput);
+  };
+  const handleDocumentSelectionChange = (): void => {
+    const trackedInput = getTrackedCredentialInput();
+
+    if (!trackedInput) {
+      return;
+    }
+
+    activeInput = trackedInput;
+    captureActiveSelection(activeInput);
   };
 
   doc.addEventListener('focusin', handleFocusIn, true);
   doc.addEventListener('mousedown', handleMouseDown, true);
+  doc.addEventListener('mouseup', handlePointerSelectionCommit, true);
+  doc.addEventListener('keyup', handlePointerSelectionCommit, true);
+  doc.addEventListener('input', handleInputSelectionChange, true);
+  doc.addEventListener('select', handleInputSelectionChange, true);
+  doc.addEventListener('selectionchange', handleDocumentSelectionChange);
 
   const observer = new activeWindow.MutationObserver((mutations) => {
     if (mutations.some((mutation) => mutationAffectsKeyboard(doc, mutation))) {
@@ -118,6 +191,11 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
     observer.disconnect();
     doc.removeEventListener('focusin', handleFocusIn, true);
     doc.removeEventListener('mousedown', handleMouseDown, true);
+    doc.removeEventListener('mouseup', handlePointerSelectionCommit, true);
+    doc.removeEventListener('keyup', handlePointerSelectionCommit, true);
+    doc.removeEventListener('input', handleInputSelectionChange, true);
+    doc.removeEventListener('select', handleInputSelectionChange, true);
+    doc.removeEventListener('selectionchange', handleDocumentSelectionChange);
     doc.querySelectorAll(`.${rootClass}`).forEach((keyboard) => keyboard.remove());
   };
 }
@@ -133,15 +211,49 @@ function createKeyboard(
   setSymbolMode: (value: boolean) => void,
   getActiveInput: () => HTMLInputElement | null,
   setActiveInput: (input: HTMLInputElement | null) => void,
+  getSavedSelection: () => InputSelectionSnapshot | null,
+  saveSelection: (input: HTMLInputElement | null) => void,
   getLastPointerActivatedButton: () => HTMLButtonElement | null,
   setLastPointerActivatedButton: (button: HTMLButtonElement | null) => void,
 ): HTMLElement {
   const keyboard = doc.createElement('div');
+  const panel = doc.createElement('div');
+  const status = doc.createElement('div');
   keyboard.className = rootClass;
   keyboard.setAttribute('role', 'complementary');
   keyboard.setAttribute('aria-label', 'ADFS on-screen keyboard');
-  keyboard.append(doc.createElement('div'));
-  keyboard.firstElementChild?.classList.add(panelClass);
+  panel.classList.add(panelClass);
+  status.className = statusClass;
+  status.setAttribute('aria-atomic', 'true');
+  status.setAttribute('aria-live', 'polite');
+  status.setAttribute('role', 'status');
+  keyboard.append(panel, status);
+
+  let statusTimeoutId: number | null = null;
+
+  const clearStatus = (): void => {
+    if (statusTimeoutId !== null) {
+      activeWindow.clearTimeout(statusTimeoutId);
+      statusTimeoutId = null;
+    }
+
+    status.className = statusClass;
+    status.removeAttribute('data-kind');
+    status.textContent = '';
+  };
+
+  const showStatus = (message: string, kind: KeyboardStatusKind): void => {
+    if (statusTimeoutId !== null) {
+      activeWindow.clearTimeout(statusTimeoutId);
+    }
+
+    status.className = `${statusClass} ${statusClass}--visible ${statusClass}--${kind}`;
+    status.dataset.kind = kind;
+    status.textContent = message;
+    statusTimeoutId = activeWindow.setTimeout(() => {
+      clearStatus();
+    }, statusDismissDelayMs);
+  };
 
   const clearPressingState = (button: HTMLButtonElement | null): void => {
     if (!button) {
@@ -156,6 +268,7 @@ function createKeyboard(
 
   const activateButton = (button: HTMLButtonElement): void => {
     const action = button.dataset.action as KeyAction | undefined;
+    clearStatus();
     const shouldResetShift = handleKey(
       doc,
       action,
@@ -164,10 +277,13 @@ function createKeyboard(
       setActiveInput,
       getShiftActive,
       getSymbolMode,
+      getSavedSelection,
+      saveSelection,
       setShiftActive,
       getCapsLockActive,
       setCapsLockActive,
       setSymbolMode,
+      showStatus,
     );
 
     if (shouldResetShift) {
@@ -190,6 +306,7 @@ function createKeyboard(
       return;
     }
 
+    saveSelection(getActiveInput());
     applyPressingState(button);
     event.preventDefault();
   });
@@ -202,7 +319,9 @@ function createKeyboard(
     const button = event.target.closest('button');
 
     if (button instanceof HTMLButtonElement) {
+      saveSelection(getActiveInput());
       applyPressingState(button);
+      event.preventDefault();
     }
   });
 
@@ -288,6 +407,7 @@ function renderKeyboard(
     for (const key of rowValue.keys) {
       const button = doc.createElement('button');
       button.type = 'button';
+      button.tabIndex = -1;
       button.className = `${keyClass}${key.className ? ` ${key.className}` : ''}`;
       button.textContent = key.label;
 
@@ -420,12 +540,19 @@ function handleKey(
   setActiveInput: (input: HTMLInputElement | null) => void,
   getShiftActive: () => boolean,
   getSymbolMode: () => boolean,
+  getSavedSelection: () => InputSelectionSnapshot | null,
+  saveSelection: (input: HTMLInputElement | null) => void,
   setShiftActive: (value: boolean) => void,
   getCapsLockActive: () => boolean,
   setCapsLockActive: (value: boolean) => void,
   setSymbolMode: (value: boolean) => void,
+  showStatus: (message: string, kind: KeyboardStatusKind) => void,
 ): boolean {
+  const savedSelection = getSavedSelection();
   const input = focusInput(getPrimaryInput(doc, activeInput));
+  if (action !== 'copy' && action !== 'backspace') {
+    restoreInputSelection(input, savedSelection);
+  }
   setActiveInput(input);
 
   if (action === 'shift') {
@@ -445,8 +572,8 @@ function handleKey(
   }
 
   if (action === 'tab') {
-    focusNextCredentialInput(doc, input, setActiveInput);
-    return false;
+    focusAdjacentCredentialInput(doc, input, getShiftActive() ? -1 : 1, setActiveInput);
+    return getShiftActive();
   }
 
   if (action === 'enter') {
@@ -455,36 +582,32 @@ function handleKey(
   }
 
   if (!input) {
+    if (action === 'copy') {
+      showStatus('Select a username or password field first.', 'error');
+    }
+
     return false;
   }
 
   if (action === 'select-all') {
     selectAllInputText(input);
+    saveSelection(input);
     return false;
   }
 
   if (action === 'copy') {
-    void copySelectedText(input);
+    void copySelectedText(input, showStatus);
     return false;
   }
 
   if (action === 'paste') {
-    void pasteClipboardText(input);
+    void pasteClipboardText(input, saveSelection);
     return false;
   }
 
   if (action === 'backspace') {
-    mutateInput(input, (inputValue, selectionStart, selectionEnd) => {
-      if (selectionStart !== selectionEnd) {
-        return { nextValue: inputValue.slice(0, selectionStart) + inputValue.slice(selectionEnd), nextPosition: selectionStart };
-      }
-
-      if (selectionStart === 0) {
-        return null;
-      }
-
-      return { nextValue: inputValue.slice(0, selectionStart - 1) + inputValue.slice(selectionEnd), nextPosition: selectionStart - 1 };
-    });
+    deleteInputSelectionOrCharacter(input);
+    saveSelection(input);
     return false;
   }
 
@@ -492,6 +615,7 @@ function handleKey(
     const text = action === 'space' ? ' ' : value ?? '';
     return { nextValue: inputValue.slice(0, selectionStart) + text + inputValue.slice(selectionEnd), nextPosition: selectionStart + text.length };
   });
+  saveSelection(input);
 
   return Boolean(value && !getSymbolMode() && getShiftActive() && /^[a-z]$/i.test(value));
 }
@@ -504,28 +628,43 @@ function selectAllInputText(input: HTMLInputElement): void {
   }
 }
 
-async function copySelectedText(input: HTMLInputElement): Promise<void> {
+async function copySelectedText(
+  input: HTMLInputElement,
+  showStatus: (message: string, kind: KeyboardStatusKind) => void,
+): Promise<void> {
   try {
-    const clipboard = input.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard;
-
-    if (!clipboard || typeof clipboard.writeText !== 'function') {
+    if (!copyCurrentInputSelection(input.ownerDocument, input)) {
+      showStatus('Select text before copying.', 'error');
       return;
     }
 
-    const selectionStart = input.selectionStart ?? 0;
-    const selectionEnd = input.selectionEnd ?? selectionStart;
-
-    if (selectionStart === selectionEnd) {
-      return;
-    }
-
-    await clipboard.writeText(input.value.slice(selectionStart, selectionEnd));
-  } catch {
-    // Ignore clipboard write failures so keyboard input still works.
+    showStatus('Copied to clipboard.', 'success');
+  } catch (error) {
+    showStatus(error instanceof Error ? error.message : 'Unable to copy the selected value.', 'error');
   }
 }
 
-async function pasteClipboardText(input: HTMLInputElement): Promise<void> {
+function deleteInputSelectionOrCharacter(
+  input: HTMLInputElement,
+): void {
+  if (deleteCurrentInputSelection(input.ownerDocument, input)) {
+    return;
+  }
+
+  mutateInput(input, (inputValue, selectionStart, selectionEnd) => {
+    if (selectionStart !== selectionEnd) {
+      return { nextValue: inputValue.slice(0, selectionStart) + inputValue.slice(selectionEnd), nextPosition: selectionStart };
+    }
+
+    if (selectionStart === 0) {
+      return null;
+    }
+
+    return { nextValue: inputValue.slice(0, selectionStart - 1) + inputValue.slice(selectionEnd), nextPosition: selectionStart - 1 };
+  });
+}
+
+async function pasteClipboardText(input: HTMLInputElement, saveSelection: (input: HTMLInputElement | null) => void): Promise<void> {
   try {
     const clipboard = input.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard;
 
@@ -543,9 +682,58 @@ async function pasteClipboardText(input: HTMLInputElement): Promise<void> {
       nextValue: inputValue.slice(0, selectionStart) + clipboardText + inputValue.slice(selectionEnd),
       nextPosition: selectionStart + clipboardText.length,
     }));
+    saveSelection(input);
   } catch {
     // Ignore clipboard read failures so keyboard input still works.
   }
+}
+
+function copyCurrentInputSelection(doc: Document, input: HTMLInputElement): boolean {
+  const execCommand = (doc as unknown as LegacyCopyDocument).execCommand;
+
+  if (typeof execCommand !== 'function') {
+    return false;
+  }
+
+  focusInput(input);
+
+  try {
+    return execCommand.call(doc, 'copy');
+  } catch {
+    return false;
+  }
+}
+
+function deleteCurrentInputSelection(doc: Document, input: HTMLInputElement): boolean {
+  const execCommand = (doc as unknown as LegacyCopyDocument).execCommand;
+
+  if (typeof execCommand !== 'function') {
+    return false;
+  }
+
+  if (doc.activeElement !== input) {
+    focusInput(input);
+  }
+
+  try {
+    return execCommand.call(doc, 'delete');
+  } catch {
+    return false;
+  }
+}
+
+function captureInputSelection(input: HTMLInputElement | null): InputSelectionSnapshot | null {
+  if (!isCredentialInput(input)) {
+    return null;
+  }
+
+  return {
+    direction: input.selectionDirection ?? 'none',
+    end: input.selectionEnd ?? input.value.length,
+    input,
+    start: input.selectionStart ?? input.value.length,
+    value: input.value,
+  };
 }
 
 function mutateInput(
@@ -571,6 +759,18 @@ function mutateInput(
 
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
   input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+}
+
+function restoreInputSelection(input: HTMLInputElement | null, snapshot: InputSelectionSnapshot | null): void {
+  if (!input || !snapshot || snapshot.input !== input) {
+    return;
+  }
+
+  try {
+    input.setSelectionRange(snapshot.start, snapshot.end, snapshot.direction ?? 'none');
+  } catch {
+    // Ignore selection failures for input variants that do not expose selection ranges.
+  }
 }
 
 function setInputValue(input: HTMLInputElement, value: string): void {
@@ -653,10 +853,16 @@ function focusInput(input: HTMLInputElement | null): HTMLInputElement | null {
   return input;
 }
 
-function focusNextCredentialInput(doc: Document, input: HTMLInputElement | null, setActiveInput: (input: HTMLInputElement | null) => void): void {
+function focusAdjacentCredentialInput(
+  doc: Document,
+  input: HTMLInputElement | null,
+  direction: -1 | 1,
+  setActiveInput: (input: HTMLInputElement | null) => void,
+): void {
   const inputs = getCredentialInputs(doc);
   const currentIndex = input ? inputs.indexOf(input) : -1;
-  const nextInput = inputs[Math.min(Math.max(currentIndex + 1, 0), inputs.length - 1)] ?? null;
+  const nextIndex = Math.min(Math.max(currentIndex + direction, 0), inputs.length - 1);
+  const nextInput = inputs[nextIndex] ?? null;
 
   setActiveInput(focusInput(nextInput));
 }
@@ -702,6 +908,33 @@ function ensureStyles(doc: Document): void {
       z-index: 2147483640;
       pointer-events: none;
     }
+    .${statusClass} {
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      max-width: min(calc(100vw - 24px), 560px);
+      padding: 8px 12px;
+      border-radius: 10px;
+      background: rgba(18, 18, 18, 0.94);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.28);
+      color: #fff;
+      font: 600 13px/1.3 "Segoe UI", system-ui, sans-serif;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 8px);
+      transition: opacity 120ms ease, transform 120ms ease;
+      white-space: nowrap;
+    }
+    .${statusClass}--visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    .${statusClass}--success {
+      background: rgba(26, 94, 55, 0.96);
+    }
+    .${statusClass}--error {
+      background: rgba(122, 35, 35, 0.96);
+    }
     .${panelClass} {
       pointer-events: auto;
       padding: 12px;
@@ -721,6 +954,9 @@ function ensureStyles(doc: Document): void {
     }
     .${keyClass} {
       appearance: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       flex: 1 1 0;
       min-width: 0;
       min-height: 48px;
@@ -733,6 +969,7 @@ function ensureStyles(doc: Document): void {
       cursor: pointer;
       touch-action: manipulation;
       white-space: nowrap;
+      text-align: center;
       transform: translateY(0);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 0 rgba(0, 0, 0, 0.38);
       transition: transform 70ms ease, box-shadow 70ms ease, background-color 70ms ease;
@@ -770,6 +1007,11 @@ function ensureStyles(doc: Document): void {
       background: #575757;
     }
     @media (max-width: 640px) {
+      .${statusClass} {
+        max-width: calc(100vw - 24px);
+        font-size: 12px;
+        white-space: normal;
+      }
       .${panelClass} {
         padding: 10px;
       }
