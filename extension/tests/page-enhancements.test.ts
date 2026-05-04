@@ -287,7 +287,7 @@ describe('page enhancements', () => {
     cleanup();
   });
 
-  it('renders the ADFS keyboard with a dedicated right-side control column', () => {
+  it('renders the ADFS keyboard with left-side resize and navigation controls', () => {
     document.body.innerHTML = `
       <form id="loginForm">
         <input id="userNameInput" />
@@ -299,12 +299,48 @@ describe('page enhancements', () => {
     const cleanup = installAdfsOverlayKeyboard();
     const rows = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'));
 
+    expect(rows[0]?.children[0]?.textContent).toBe('Size');
     expect(rows[0]?.lastElementChild?.textContent).toBe('Backspace');
+    expect(rows[1]?.firstElementChild?.textContent).toBe('Tab');
     expect(rows[1]?.lastElementChild?.textContent).toBe('Select all');
+    expect(rows[2]?.firstElementChild?.textContent).toBe('Caps');
     expect(rows[2]?.lastElementChild?.textContent).toBe('Copy');
     expect(rows[3]?.lastElementChild?.textContent).toBe('Paste');
-    expect(rows[3]?.querySelectorAll('[data-action="shift"]').length).toBe(2);
+    expect(rows[3]?.firstElementChild?.textContent).toBe('Shift');
+    expect(Array.from(rows[3]?.children ?? []).at(-2)?.textContent).toBe('-');
+    expect(Array.from(rows[3]?.children ?? []).at(-3)?.textContent).toBe('m');
+    expect(rows[4]?.firstElementChild?.textContent).toBe('&123');
+    expect(rows[4]?.querySelector('[data-action="space"]')?.textContent).toBe('Space');
+    expect(rows[4]?.lastElementChild?.textContent).toBe('Enter');
+    expect(rows[3]?.querySelectorAll('[data-action="shift"]').length).toBe(1);
     expect(rows[3]?.querySelector('[data-action="backspace"]')).toBeNull();
+
+    cleanup();
+  });
+
+  it('cycles the ADFS keyboard through compact, comfortable, and full size modes', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const keyboard = document.querySelector<HTMLElement>('.glide-adfs-keyboard');
+    const sizeButton = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="cycle-size"]');
+
+    expect(keyboard?.dataset.size).toBe('compact');
+
+    sizeButton?.click();
+    expect(document.querySelector<HTMLElement>('.glide-adfs-keyboard')?.dataset.size).toBe('comfortable');
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="cycle-size"]')?.click();
+    expect(document.querySelector<HTMLElement>('.glide-adfs-keyboard')?.dataset.size).toBe('full');
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="cycle-size"]')?.click();
+    expect(document.querySelector<HTMLElement>('.glide-adfs-keyboard')?.dataset.size).toBe('compact');
 
     cleanup();
   });
@@ -600,7 +636,7 @@ describe('page enhancements', () => {
     cleanup();
   });
 
-  it('copies after button mousedown before focus shifts', async () => {
+  it('copies after button mousedown and mouseup on the same key before focus shifts', async () => {
     const execCommand = vi.fn().mockReturnValue(true);
 
     Object.defineProperty(document, 'execCommand', {
@@ -633,6 +669,7 @@ describe('page enhancements', () => {
       get: () => usernameInput.value.length,
     });
 
+    copyButton.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     copyButton.click();
     await flushMicrotasks();
 
@@ -838,6 +875,54 @@ describe('page enhancements', () => {
     key?.dispatchEvent(new Event('pointerup', { bubbles: true }));
     expect(key?.classList.contains('glide-adfs-keyboard__key--pressing')).toBe(false);
     expect(key?.style.getPropertyValue('transform')).toBe('');
+
+    cleanup();
+  });
+
+  it('clears the pressed visual state when the mouse drags off the pressed key', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const pressedKey = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="q"]');
+    const otherKey = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="w"]');
+
+    pressedKey?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    expect(pressedKey?.classList.contains('glide-adfs-keyboard__key--pressing')).toBe(true);
+
+    otherKey?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true }));
+
+    expect(pressedKey?.classList.contains('glide-adfs-keyboard__key--pressing')).toBe(false);
+    expect(pressedKey?.style.getPropertyValue('transform')).toBe('');
+
+    cleanup();
+  });
+
+  it('does not type a key when the mouse is released over a different key', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const pressedKey = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="q"]');
+    const otherKey = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="w"]');
+
+    usernameInput.focus();
+    pressedKey?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    otherKey?.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+
+    expect(usernameInput.value).toBe('');
+    expect(pressedKey?.classList.contains('glide-adfs-keyboard__key--pressing')).toBe(false);
 
     cleanup();
   });

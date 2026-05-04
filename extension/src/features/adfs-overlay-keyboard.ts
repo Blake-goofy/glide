@@ -11,11 +11,12 @@ const pressedBackgroundColor = '#1f1f1f';
 const pressedBoxShadow = 'inset 0 2px 4px rgba(0, 0, 0, 0.34), 0 0 0 rgba(0, 0, 0, 0.12)';
 const pressedTransform = 'translateY(3px)';
 const statusDismissDelayMs = 2500;
+const keyboardSizeModes = ['compact', 'comfortable', 'full'] as const;
 const letterRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-  ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm', '-'],
 ] as const;
 const symbolRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
@@ -24,8 +25,9 @@ const symbolRows = [
   [':', ';', "'", '"', '?', '<', '>', ',', '.'],
 ] as const;
 
-type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste';
+type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste' | 'cycle-size';
 type KeyboardStatusKind = 'error' | 'success';
+type KeyboardSizeMode = (typeof keyboardSizeModes)[number];
 
 type InputSelectionDirection = Exclude<HTMLInputElement['selectionDirection'], undefined>;
 
@@ -60,6 +62,7 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
   let shiftActive = false;
   let capsLockActive = false;
   let symbolMode = false;
+  let keyboardSize: KeyboardSizeMode = 'compact';
   let lastPointerActivatedButton: HTMLButtonElement | null = null;
 
   const captureActiveSelection = (input: HTMLInputElement | null): void => {
@@ -102,6 +105,7 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           () => shiftActive,
           () => capsLockActive,
           () => symbolMode,
+          () => keyboardSize,
           (value) => {
             shiftActive = value;
           },
@@ -110,6 +114,9 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           },
           (value) => {
             symbolMode = value;
+          },
+          (value) => {
+            keyboardSize = value;
           },
           () => activeInput,
           (input) => {
@@ -206,9 +213,11 @@ function createKeyboard(
   getShiftActive: () => boolean,
   getCapsLockActive: () => boolean,
   getSymbolMode: () => boolean,
+  getKeyboardSize: () => KeyboardSizeMode,
   setShiftActive: (value: boolean) => void,
   setCapsLockActive: (value: boolean) => void,
   setSymbolMode: (value: boolean) => void,
+  setKeyboardSize: (value: KeyboardSizeMode) => void,
   getActiveInput: () => HTMLInputElement | null,
   setActiveInput: (input: HTMLInputElement | null) => void,
   getSavedSelection: () => InputSelectionSnapshot | null,
@@ -219,6 +228,7 @@ function createKeyboard(
   const keyboard = doc.createElement('div');
   const panel = doc.createElement('div');
   const status = doc.createElement('div');
+  let pressedPointerButton: HTMLButtonElement | null = null;
   keyboard.className = rootClass;
   keyboard.setAttribute('role', 'complementary');
   keyboard.setAttribute('aria-label', 'ADFS on-screen keyboard');
@@ -266,6 +276,19 @@ function createKeyboard(
     button.style.removeProperty('transform');
   };
 
+  const setPressedPointerButton = (button: HTMLButtonElement | null): void => {
+    if (pressedPointerButton === button) {
+      return;
+    }
+
+    clearPressingState(pressedPointerButton);
+    pressedPointerButton = button;
+
+    if (pressedPointerButton) {
+      applyPressingState(pressedPointerButton);
+    }
+  };
+
   const activateButton = (button: HTMLButtonElement): void => {
     const action = button.dataset.action as KeyAction | undefined;
     clearStatus();
@@ -277,12 +300,14 @@ function createKeyboard(
       setActiveInput,
       getShiftActive,
       getSymbolMode,
+      getKeyboardSize,
       getSavedSelection,
       saveSelection,
       setShiftActive,
       getCapsLockActive,
       setCapsLockActive,
       setSymbolMode,
+      setKeyboardSize,
       showStatus,
     );
 
@@ -291,7 +316,7 @@ function createKeyboard(
     }
 
     if (shouldRenderAfterAction(action) || shouldResetShift) {
-      renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode());
+      renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize());
     }
   };
 
@@ -307,7 +332,7 @@ function createKeyboard(
     }
 
     saveSelection(getActiveInput());
-    applyPressingState(button);
+    setPressedPointerButton(button);
     event.preventDefault();
   });
 
@@ -320,19 +345,54 @@ function createKeyboard(
 
     if (button instanceof HTMLButtonElement) {
       saveSelection(getActiveInput());
-      applyPressingState(button);
+      setPressedPointerButton(button);
       event.preventDefault();
     }
+  });
+
+  keyboard.addEventListener('pointermove', (event) => {
+    const hoveredButton = event.target instanceof Element ? event.target.closest('button') : null;
+
+    if (pressedPointerButton && hoveredButton !== pressedPointerButton) {
+      clearPressingState(pressedPointerButton);
+      return;
+    }
+
+    if (pressedPointerButton && hoveredButton === pressedPointerButton) {
+      applyPressingState(pressedPointerButton);
+    }
+  });
+
+  keyboard.addEventListener('pointerleave', () => {
+    clearPressingState(pressedPointerButton);
+  });
+
+  keyboard.addEventListener('mousemove', (event) => {
+    const hoveredButton = event.target instanceof Element ? event.target.closest('button') : null;
+
+    if (pressedPointerButton && hoveredButton !== pressedPointerButton) {
+      clearPressingState(pressedPointerButton);
+      return;
+    }
+
+    if (pressedPointerButton && hoveredButton === pressedPointerButton) {
+      applyPressingState(pressedPointerButton);
+    }
+  });
+
+  keyboard.addEventListener('mouseleave', () => {
+    clearPressingState(pressedPointerButton);
   });
 
   keyboard.addEventListener('pointerup', (event) => {
     const button = event.target instanceof Element ? event.target.closest('button') : null;
 
-    if (!(button instanceof HTMLButtonElement)) {
+    if (!(button instanceof HTMLButtonElement) || button !== pressedPointerButton) {
+      setPressedPointerButton(null);
       return;
     }
 
-    clearPressingState(button);
+    setPressedPointerButton(null);
     setLastPointerActivatedButton(button);
     activeWindow.setTimeout(() => {
       if (getLastPointerActivatedButton() === button) {
@@ -345,17 +405,20 @@ function createKeyboard(
   keyboard.addEventListener('pointercancel', (event) => {
     const button = event.target instanceof Element ? event.target.closest('button') : null;
 
-    if (button instanceof HTMLButtonElement) {
-      clearPressingState(button);
+    if (button === pressedPointerButton) {
+      setPressedPointerButton(null);
     }
   });
 
   keyboard.addEventListener('mouseup', (event) => {
     const button = event.target instanceof Element ? event.target.closest('button') : null;
 
-    if (button instanceof HTMLButtonElement) {
-      clearPressingState(button);
+    if (!button || button !== pressedPointerButton) {
+      setPressedPointerButton(null);
+      return;
     }
+
+    setPressedPointerButton(null);
   });
 
   keyboard.addEventListener('click', (event) => {
@@ -370,11 +433,16 @@ function createKeyboard(
       return;
     }
 
+    if (pressedPointerButton) {
+      setPressedPointerButton(null);
+      return;
+    }
+
     clearPressingState(button);
     activateButton(button);
   });
 
-  renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode());
+  renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode(), getKeyboardSize());
   return keyboard;
 }
 
@@ -391,6 +459,7 @@ function renderKeyboard(
   shiftActive: boolean,
   capsLockActive: boolean,
   symbolMode: boolean,
+  keyboardSize: KeyboardSizeMode,
 ): void {
   const panel = keyboard.querySelector(`.${panelClass}`);
 
@@ -398,6 +467,7 @@ function renderKeyboard(
     return;
   }
 
+  keyboard.dataset.size = keyboardSize;
   panel.innerHTML = '';
 
   for (const rowValue of getRows(shiftActive, capsLockActive, symbolMode)) {
@@ -436,20 +506,20 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
     return [
       {
         className: '',
-        keys: symbolRows[0]
-          .map((value) => createValueKey(value))
+        keys: [createActionKey('Size', 'cycle-size', `${keyClass}--control ${keyClass}--size-control ${keyClass}--wide-label`)]
+          .concat(symbolRows[0].map((value) => createValueKey(value)))
           .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
         className: '',
-        keys: symbolRows[1]
-          .map((value) => createValueKey(value))
+        keys: [createActionKey('Tab', 'tab', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column`)]
+          .concat(symbolRows[1].map((value) => createValueKey(value)))
           .concat([createActionKey('Select all', 'select-all', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
         className: '',
-        keys: symbolRows[2]
-          .map((value) => createValueKey(value))
+        keys: [createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column${capsLockActive ? ` ${keyClass}--active` : ''}`)]
+          .concat(symbolRows[2].map((value) => createValueKey(value)))
           .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
@@ -461,10 +531,8 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
       {
         className: '',
         keys: [
-          createActionKey('ABC', 'toggle-mode'),
-          createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label${capsLockActive ? ` ${keyClass}--active` : ''}`),
+          createActionKey('ABC', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-left`),
           createActionKey('Space', 'space', `${keyClass}--space`),
-          createActionKey('Tab', 'tab', `${keyClass}--control ${keyClass}--wide-label`),
           createActionKey('Enter', 'enter', `${keyClass}--enter`),
         ],
       },
@@ -474,38 +542,35 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
   return [
     {
       className: '',
-      keys: letterRows[0]
-        .map((value) => createValueKey(value))
+        keys: [createActionKey('Size', 'cycle-size', `${keyClass}--control ${keyClass}--size-control ${keyClass}--wide-label`)]
+        .concat(letterRows[0].map((value) => createValueKey(value)))
         .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
       className: '',
-      keys: letterRows[1]
-        .map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive)))
+      keys: [createActionKey('Tab', 'tab', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column`)]
+        .concat(letterRows[1].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
         .concat([createActionKey('Select all', 'select-all', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
       className: '',
-      keys: letterRows[2]
-        .map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive)))
+      keys: [createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column${capsLockActive ? ` ${keyClass}--active` : ''}`)]
+        .concat(letterRows[2].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
         .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
       className: '',
-      keys: [createActionKey('Shift', 'shift', `${keyClass}--control${shiftActive ? ` ${keyClass}--active` : ''}`)]
+      keys: [createActionKey('Shift', 'shift', `${keyClass}--control ${keyClass}--shift-left${shiftActive ? ` ${keyClass}--active` : ''}`)]
         .concat(letterRows[3].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
         .concat([
-          createActionKey('Shift', 'shift', `${keyClass}--control${shiftActive ? ` ${keyClass}--active` : ''}`),
           createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`),
         ]),
     },
     {
       className: '',
       keys: [
-        createActionKey('&123', 'toggle-mode'),
-        createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label${capsLockActive ? ` ${keyClass}--active` : ''}`),
+        createActionKey('&123', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-left`),
         createActionKey('Space', 'space', `${keyClass}--space`),
-        createActionKey('Tab', 'tab', `${keyClass}--control ${keyClass}--wide-label`),
         createActionKey('Enter', 'enter', `${keyClass}--enter`),
       ],
     },
@@ -513,7 +578,7 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
 }
 
 function shouldRenderAfterAction(action: KeyAction | undefined): boolean {
-  return action === 'shift' || action === 'capslock' || action === 'toggle-mode';
+  return action === 'shift' || action === 'capslock' || action === 'toggle-mode' || action === 'cycle-size';
 }
 
 function createValueKey(value: string): KeyboardKey {
@@ -540,12 +605,14 @@ function handleKey(
   setActiveInput: (input: HTMLInputElement | null) => void,
   getShiftActive: () => boolean,
   getSymbolMode: () => boolean,
+  getKeyboardSize: () => KeyboardSizeMode,
   getSavedSelection: () => InputSelectionSnapshot | null,
   saveSelection: (input: HTMLInputElement | null) => void,
   setShiftActive: (value: boolean) => void,
   getCapsLockActive: () => boolean,
   setCapsLockActive: (value: boolean) => void,
   setSymbolMode: (value: boolean) => void,
+  setKeyboardSize: (value: KeyboardSizeMode) => void,
   showStatus: (message: string, kind: KeyboardStatusKind) => void,
 ): boolean {
   const savedSelection = getSavedSelection();
@@ -568,6 +635,11 @@ function handleKey(
   if (action === 'toggle-mode') {
     setSymbolMode(!getSymbolMode());
     setShiftActive(false);
+    return false;
+  }
+
+  if (action === 'cycle-size') {
+    setKeyboardSize(stepKeyboardSize(getKeyboardSize(), 1));
     return false;
   }
 
@@ -891,6 +963,13 @@ function resolveLetterValue(value: string, shiftActive: boolean, capsLockActive:
   return shiftActive !== capsLockActive ? value.toUpperCase() : value.toLowerCase();
 }
 
+function stepKeyboardSize(currentSize: KeyboardSizeMode, delta: -1 | 1): KeyboardSizeMode {
+  const currentIndex = keyboardSizeModes.indexOf(currentSize);
+  const nextIndex = (currentIndex + delta + keyboardSizeModes.length) % keyboardSizeModes.length;
+
+  return keyboardSizeModes[nextIndex] ?? currentSize;
+}
+
 function ensureStyles(doc: Document): void {
   if (doc.getElementById(styleId)) {
     return;
@@ -900,13 +979,62 @@ function ensureStyles(doc: Document): void {
   style.id = styleId;
   style.textContent = `
     .${rootClass} {
+      --glide-adfs-keyboard-width: min(calc(100vw - 24px), 720px);
+      --glide-adfs-keyboard-bottom: 14px;
+      --glide-adfs-keyboard-panel-padding: 12px;
+      --glide-adfs-keyboard-row-gap: 8px;
+      --glide-adfs-keyboard-key-height: 48px;
+      --glide-adfs-keyboard-key-font-size: 16px;
+      --glide-adfs-keyboard-wide-font-size: 15px;
+      --glide-adfs-keyboard-space-flex: 5.2 1 0;
+      --glide-adfs-keyboard-enter-flex: 1.6 1 0;
+      --glide-adfs-keyboard-control-flex: 1.35 1 0;
+      --glide-adfs-keyboard-wide-flex: 1.7 1 0;
+      --glide-adfs-keyboard-left-column-flex: 1.95 1 0;
+      --glide-adfs-keyboard-bottom-left-flex: 2.35 1 0;
+      --glide-adfs-keyboard-shift-left-flex: 2.85 1 0;
+      --glide-adfs-keyboard-size-control-flex: 0.9 1 0;
       position: fixed;
       left: 50%;
-      bottom: 14px;
+      bottom: var(--glide-adfs-keyboard-bottom);
       transform: translateX(-50%);
-      width: min(calc(100vw - 24px), 720px);
+      width: var(--glide-adfs-keyboard-width);
       z-index: 2147483640;
       pointer-events: none;
+    }
+    .${rootClass}[data-size="comfortable"] {
+      --glide-adfs-keyboard-width: min(calc(100vw - 18px), 920px);
+      --glide-adfs-keyboard-bottom: 10px;
+      --glide-adfs-keyboard-panel-padding: 16px;
+      --glide-adfs-keyboard-row-gap: 10px;
+      --glide-adfs-keyboard-key-height: 60px;
+      --glide-adfs-keyboard-key-font-size: 18px;
+      --glide-adfs-keyboard-wide-font-size: 16px;
+      --glide-adfs-keyboard-space-flex: 5.8 1 0;
+      --glide-adfs-keyboard-enter-flex: 1.8 1 0;
+      --glide-adfs-keyboard-control-flex: 1.45 1 0;
+      --glide-adfs-keyboard-wide-flex: 1.85 1 0;
+      --glide-adfs-keyboard-left-column-flex: 2.15 1 0;
+      --glide-adfs-keyboard-bottom-left-flex: 2.55 1 0;
+      --glide-adfs-keyboard-shift-left-flex: 3.05 1 0;
+      --glide-adfs-keyboard-size-control-flex: 1.05 1 0;
+    }
+    .${rootClass}[data-size="full"] {
+      --glide-adfs-keyboard-width: calc(100vw - 12px);
+      --glide-adfs-keyboard-bottom: 6px;
+      --glide-adfs-keyboard-panel-padding: 18px;
+      --glide-adfs-keyboard-row-gap: 12px;
+      --glide-adfs-keyboard-key-height: 72px;
+      --glide-adfs-keyboard-key-font-size: 20px;
+      --glide-adfs-keyboard-wide-font-size: 18px;
+      --glide-adfs-keyboard-space-flex: 6.4 1 0;
+      --glide-adfs-keyboard-enter-flex: 2 1 0;
+      --glide-adfs-keyboard-control-flex: 1.55 1 0;
+      --glide-adfs-keyboard-wide-flex: 2.1 1 0;
+      --glide-adfs-keyboard-left-column-flex: 2.4 1 0;
+      --glide-adfs-keyboard-bottom-left-flex: 2.9 1 0;
+      --glide-adfs-keyboard-shift-left-flex: 3.35 1 0;
+      --glide-adfs-keyboard-size-control-flex: 1.15 1 0;
     }
     .${statusClass} {
       position: absolute;
@@ -937,7 +1065,7 @@ function ensureStyles(doc: Document): void {
     }
     .${panelClass} {
       pointer-events: auto;
-      padding: 12px;
+      padding: var(--glide-adfs-keyboard-panel-padding);
       border-radius: 14px;
       background: rgba(18, 18, 18, 0.96);
       box-shadow: 0 18px 40px rgba(0, 0, 0, 0.36);
@@ -946,8 +1074,8 @@ function ensureStyles(doc: Document): void {
     }
     .${rowClass} {
       display: flex;
-      gap: 8px;
-      margin-top: 8px;
+      gap: var(--glide-adfs-keyboard-row-gap);
+      margin-top: var(--glide-adfs-keyboard-row-gap);
     }
     .${rowClass}:first-child {
       margin-top: 0;
@@ -959,13 +1087,13 @@ function ensureStyles(doc: Document): void {
       justify-content: center;
       flex: 1 1 0;
       min-width: 0;
-      min-height: 48px;
+      min-height: var(--glide-adfs-keyboard-key-height);
       padding-inline: 10px;
       border: 1px solid #565656;
       border-radius: 8px;
       background: #2f2f2f;
       color: #fff;
-      font: 600 16px/1.1 "Segoe UI", system-ui, sans-serif;
+      font: 600 var(--glide-adfs-keyboard-key-font-size)/1.1 "Segoe UI", system-ui, sans-serif;
       cursor: pointer;
       touch-action: manipulation;
       white-space: nowrap;
@@ -989,19 +1117,31 @@ function ensureStyles(doc: Document): void {
       outline-offset: 1px;
     }
     .${keyClass}--control {
-      flex: 1.35 1 0;
+      flex: var(--glide-adfs-keyboard-control-flex);
       background: #242424;
     }
     .${keyClass}--space {
-      flex: 4 1 0;
+      flex: var(--glide-adfs-keyboard-space-flex);
     }
     .${keyClass}--enter {
-      flex: 1.6 1 0;
+      flex: var(--glide-adfs-keyboard-enter-flex);
     }
     .${keyClass}--wide-label {
-      flex: 1.7 1 0;
+      flex: var(--glide-adfs-keyboard-wide-flex);
       padding-inline: 22px;
-      font-size: 15px;
+      font-size: var(--glide-adfs-keyboard-wide-font-size);
+    }
+    .${keyClass}--left-column {
+      flex: var(--glide-adfs-keyboard-left-column-flex);
+    }
+    .${keyClass}--bottom-left {
+      flex: var(--glide-adfs-keyboard-bottom-left-flex);
+    }
+    .${keyClass}--shift-left {
+      flex: var(--glide-adfs-keyboard-shift-left-flex);
+    }
+    .${keyClass}--size-control {
+      flex: var(--glide-adfs-keyboard-size-control-flex);
     }
     .${keyClass}--active {
       background: #575757;
@@ -1013,15 +1153,15 @@ function ensureStyles(doc: Document): void {
         white-space: normal;
       }
       .${panelClass} {
-        padding: 10px;
+        padding: max(10px, calc(var(--glide-adfs-keyboard-panel-padding) - 2px));
       }
       .${rowClass} {
-        gap: 6px;
-        margin-top: 6px;
+        gap: max(6px, calc(var(--glide-adfs-keyboard-row-gap) - 2px));
+        margin-top: max(6px, calc(var(--glide-adfs-keyboard-row-gap) - 2px));
       }
       .${keyClass} {
-        min-height: 44px;
-        font-size: 14px;
+        min-height: max(44px, calc(var(--glide-adfs-keyboard-key-height) - 4px));
+        font-size: max(14px, calc(var(--glide-adfs-keyboard-key-font-size) - 2px));
       }
     }
   `;
