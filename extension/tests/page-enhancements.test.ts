@@ -279,6 +279,72 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('renders the ADFS keyboard with a dedicated right-side control column', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'));
+
+    expect(rows[0]?.lastElementChild?.textContent).toBe('Backspace');
+    expect(rows[1]?.lastElementChild?.textContent).toBe('Select all');
+    expect(rows[2]?.lastElementChild?.textContent).toBe('Copy');
+    expect(rows[3]?.lastElementChild?.textContent).toBe('Paste');
+    expect(rows[3]?.querySelectorAll('[data-action="shift"]').length).toBe(2);
+    expect(rows[3]?.querySelector('[data-action="backspace"]')).toBeNull();
+
+    cleanup();
+  });
+
+  it('supports select all, copy, and paste for the active ADFS field', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const readText = vi.fn().mockResolvedValue('replaced');
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        readText,
+        writeText,
+      },
+    });
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="original value" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+
+    usernameInput.focus();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="select-all"]')?.click();
+    expect(usernameInput.selectionStart).toBe(0);
+    expect(usernameInput.selectionEnd).toBe(usernameInput.value.length);
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="copy"]')?.click();
+    await flushMicrotasks();
+
+    expect(writeText).toHaveBeenCalledWith('original value');
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="paste"]')?.click();
+    await flushMicrotasks();
+
+    expect(readText).toHaveBeenCalledTimes(1);
+    expect(usernameInput.value).toBe('replaced');
+    expect(usernameInput.selectionStart).toBe('replaced'.length);
+    expect(usernameInput.selectionEnd).toBe('replaced'.length);
+
+    cleanup();
+  });
+
   it('shows the pressed class while a key pointer is down', () => {
     document.body.innerHTML = `
       <form id="loginForm">

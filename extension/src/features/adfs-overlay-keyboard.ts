@@ -22,7 +22,7 @@ const symbolRows = [
   [':', ';', "'", '"', '?', '<', '>', ',', '.'],
 ] as const;
 
-type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter';
+type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste';
 
 interface KeyboardKey {
   action?: KeyAction;
@@ -174,7 +174,7 @@ function createKeyboard(
       setShiftActive(false);
     }
 
-    if (action || shouldResetShift) {
+    if (shouldRenderAfterAction(action) || shouldResetShift) {
       renderKeyboard(doc, keyboard, getShiftActive(), getCapsLockActive(), getSymbolMode());
     }
   };
@@ -314,14 +314,29 @@ function renderKeyboard(
 function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: boolean): KeyboardRow[] {
   if (symbolMode) {
     return [
-      { className: '', keys: symbolRows[0].map((value) => createValueKey(value)) },
-      { className: '', keys: symbolRows[1].map((value) => createValueKey(value)) },
-      { className: '', keys: symbolRows[2].map((value) => createValueKey(value)) },
+      {
+        className: '',
+        keys: symbolRows[0]
+          .map((value) => createValueKey(value))
+          .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
+      },
+      {
+        className: '',
+        keys: symbolRows[1]
+          .map((value) => createValueKey(value))
+          .concat([createActionKey('Select all', 'select-all', `${keyClass}--control ${keyClass}--wide-label`)]),
+      },
+      {
+        className: '',
+        keys: symbolRows[2]
+          .map((value) => createValueKey(value))
+          .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
+      },
       {
         className: '',
         keys: symbolRows[3]
           .map((value) => createValueKey(value))
-          .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
+          .concat([createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
         className: '',
@@ -337,20 +352,32 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
   }
 
   return [
-    { className: '', keys: letterRows[0].map((value) => createValueKey(value)) },
     {
-      className: `${rowClass}--letters-middle`,
-      keys: letterRows[1].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))),
+      className: '',
+      keys: letterRows[0]
+        .map((value) => createValueKey(value))
+        .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
-      className: `${rowClass}--letters-middle`,
-      keys: letterRows[2].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))),
+      className: '',
+      keys: letterRows[1]
+        .map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive)))
+        .concat([createActionKey('Select all', 'select-all', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
-      className: `${rowClass}--letters-bottom`,
+      className: '',
+      keys: letterRows[2]
+        .map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive)))
+        .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
+    },
+    {
+      className: '',
       keys: [createActionKey('Shift', 'shift', `${keyClass}--control${shiftActive ? ` ${keyClass}--active` : ''}`)]
         .concat(letterRows[3].map((value) => createValueKey(resolveLetterValue(value, shiftActive, capsLockActive))))
-        .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
+        .concat([
+          createActionKey('Shift', 'shift', `${keyClass}--control${shiftActive ? ` ${keyClass}--active` : ''}`),
+          createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`),
+        ]),
     },
     {
       className: '',
@@ -363,6 +390,10 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
       ],
     },
   ];
+}
+
+function shouldRenderAfterAction(action: KeyAction | undefined): boolean {
+  return action === 'shift' || action === 'capslock' || action === 'toggle-mode';
 }
 
 function createValueKey(value: string): KeyboardKey {
@@ -427,6 +458,21 @@ function handleKey(
     return false;
   }
 
+  if (action === 'select-all') {
+    selectAllInputText(input);
+    return false;
+  }
+
+  if (action === 'copy') {
+    void copySelectedText(input);
+    return false;
+  }
+
+  if (action === 'paste') {
+    void pasteClipboardText(input);
+    return false;
+  }
+
   if (action === 'backspace') {
     mutateInput(input, (inputValue, selectionStart, selectionEnd) => {
       if (selectionStart !== selectionEnd) {
@@ -448,6 +494,58 @@ function handleKey(
   });
 
   return Boolean(value && !getSymbolMode() && getShiftActive() && /^[a-z]$/i.test(value));
+}
+
+function selectAllInputText(input: HTMLInputElement): void {
+  try {
+    input.setSelectionRange(0, input.value.length);
+  } catch {
+    input.select();
+  }
+}
+
+async function copySelectedText(input: HTMLInputElement): Promise<void> {
+  try {
+    const clipboard = input.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard;
+
+    if (!clipboard || typeof clipboard.writeText !== 'function') {
+      return;
+    }
+
+    const selectionStart = input.selectionStart ?? 0;
+    const selectionEnd = input.selectionEnd ?? selectionStart;
+
+    if (selectionStart === selectionEnd) {
+      return;
+    }
+
+    await clipboard.writeText(input.value.slice(selectionStart, selectionEnd));
+  } catch {
+    // Ignore clipboard write failures so keyboard input still works.
+  }
+}
+
+async function pasteClipboardText(input: HTMLInputElement): Promise<void> {
+  try {
+    const clipboard = input.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard;
+
+    if (!clipboard || typeof clipboard.readText !== 'function') {
+      return;
+    }
+
+    const clipboardText = await clipboard.readText();
+
+    if (!clipboardText) {
+      return;
+    }
+
+    mutateInput(input, (inputValue, selectionStart, selectionEnd) => ({
+      nextValue: inputValue.slice(0, selectionStart) + clipboardText + inputValue.slice(selectionEnd),
+      nextPosition: selectionStart + clipboardText.length,
+    }));
+  } catch {
+    // Ignore clipboard read failures so keyboard input still works.
+  }
 }
 
 function mutateInput(
@@ -621,12 +719,6 @@ function ensureStyles(doc: Document): void {
     .${rowClass}:first-child {
       margin-top: 0;
     }
-    .${rowClass}--letters-middle {
-      padding-inline: 18px;
-    }
-    .${rowClass}--letters-bottom {
-      padding-inline: 34px;
-    }
     .${keyClass} {
       appearance: none;
       flex: 1 1 0;
@@ -684,12 +776,6 @@ function ensureStyles(doc: Document): void {
       .${rowClass} {
         gap: 6px;
         margin-top: 6px;
-      }
-      .${rowClass}--letters-middle {
-        padding-inline: 10px;
-      }
-      .${rowClass}--letters-bottom {
-        padding-inline: 18px;
       }
       .${keyClass} {
         min-height: 44px;
