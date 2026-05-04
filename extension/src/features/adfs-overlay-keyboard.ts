@@ -16,7 +16,6 @@ const pressedBoxShadow = 'inset 0 2px 4px rgba(0, 0, 0, 0.34), 0 0 0 rgba(0, 0, 
 const pressedTransform = 'translateY(3px)';
 const statusDismissDelayMs = 2500;
 const keyboardSizeModes = ['compact', 'comfortable', 'full'] as const;
-const arrowActions = ['arrow-left', 'arrow-right', 'arrow-up', 'arrow-down'] as const;
 const keyboardPreferencesStorageKey = 'glide.adfsKeyboard.preferences';
 const letterRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
@@ -31,7 +30,7 @@ const symbolRows = [
   [':', ';', "'", '"', '?', '<', '>', ',', '.'],
 ] as const;
 
-type ArrowAction = (typeof arrowActions)[number];
+type ArrowAction = 'arrow-left' | 'arrow-right' | 'arrow-up' | 'arrow-down';
 type KeyAction = 'shift' | 'capslock' | 'toggle-mode' | 'toggle-numpad' | 'backspace' | 'tab' | 'space' | 'enter' | 'select-all' | 'copy' | 'paste' | 'cycle-size' | ArrowAction;
 type KeyboardStatusKind = 'error' | 'success';
 type KeyboardSizeMode = (typeof keyboardSizeModes)[number];
@@ -544,7 +543,7 @@ function renderKeyboard(
   main.className = mainClass;
   side.className = sideClass;
 
-  for (const rowValue of getRows(shiftActive, capsLockActive, symbolMode, numpadVisible)) {
+  for (const rowValue of getRows(shiftActive, capsLockActive, symbolMode)) {
     const row = doc.createElement('div');
     row.className = `${rowClass}${rowValue.className ? ` ${rowValue.className}` : ''}`;
 
@@ -610,7 +609,7 @@ function renderKeyboard(
   panel.append(layout);
 }
 
-function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: boolean, numpadVisible: boolean): KeyboardRow[] {
+function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: boolean): KeyboardRow[] {
   if (symbolMode) {
     return [
       {
@@ -923,14 +922,14 @@ function moveInputCaret(input: HTMLInputElement | null, action: ArrowAction, sel
 
   applyInputSelectionRange(input, nextPosition, nextPosition);
 
-  scheduleArrowCaretStabilization(input, nextPosition, 'timeout');
+  scheduleArrowCaretStabilization(input, nextPosition);
 
   input.ownerDocument.defaultView?.requestAnimationFrame(() => {
-    scheduleArrowCaretStabilization(input, nextPosition, 'animation-frame');
+    scheduleArrowCaretStabilization(input, nextPosition);
   });
 
   input.ownerDocument.defaultView?.setTimeout(() => {
-    scheduleArrowCaretStabilization(input, nextPosition, 'timeout-50ms');
+    scheduleArrowCaretStabilization(input, nextPosition);
   }, 50);
 
   return createInputSelectionSnapshot(input, nextPosition, nextPosition, selection.direction);
@@ -1563,7 +1562,6 @@ function isArrowAction(action: KeyAction | undefined): action is ArrowAction {
 function scheduleArrowCaretStabilization(
   input: HTMLInputElement,
   nextPosition: number,
-  stage: 'timeout' | 'animation-frame' | 'timeout-50ms',
 ): void {
   if (input.ownerDocument.activeElement !== input) {
     focusInput(input);
