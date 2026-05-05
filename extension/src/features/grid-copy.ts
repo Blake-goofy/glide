@@ -4,6 +4,7 @@ const copyMenuClassName = 'glide-grid-copy-menu';
 const copyMenuHostId = 'glide-grid-copy-menu';
 const copyMenuItemSelector = '[data-glide-grid-copy-action="copy"]';
 const handledLinkSuppressWindowMs = 1000;
+const handledTouchContextMenuSuppressWindowMs = 1000;
 const longPressDistanceThresholdPx = 12;
 const longPressDurationMs = 550;
 const styleId = 'glide-grid-copy-style';
@@ -28,6 +29,8 @@ export function installGridCopy(doc: Document = document): () => void {
   let longPressTimer: number | null = null;
   let suppressedLinkCell: HTMLElement | null = null;
   let suppressedLinkUntil = 0;
+  let suppressedTouchContextMenuCell: HTMLElement | null = null;
+  let suppressedTouchContextMenuUntil = 0;
   let longPressListenersAttached = false;
 
   const attachLongPressListeners = (): void => {
@@ -130,6 +133,13 @@ export function installGridCopy(doc: Document = document): () => void {
       return;
     }
 
+    if (shouldSuppressHandledTouchContextMenu(target, suppressedTouchContextMenuCell, suppressedTouchContextMenuUntil)) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+      return;
+    }
+
     const candidate = getGridCellCandidate(target);
 
     if (!candidate) {
@@ -204,6 +214,9 @@ export function installGridCopy(doc: Document = document): () => void {
         suppressedLinkCell = linkCell;
         suppressedLinkUntil = Date.now() + handledLinkSuppressWindowMs;
       }
+
+      suppressedTouchContextMenuCell = currentState.cell;
+      suppressedTouchContextMenuUntil = Date.now() + handledTouchContextMenuSuppressWindowMs;
 
       clearLongPressState();
       void copyCellText(currentState.cell, currentState.text);
@@ -442,4 +455,16 @@ function isSuppressedLinkTarget(target: EventTarget | null, suppressedCell: HTML
 
 function shouldSuppressHandledLink(target: EventTarget | null, suppressedCell: HTMLElement | null, suppressedUntil: number): boolean {
   return isSuppressedLinkTarget(target, suppressedCell, suppressedUntil);
+}
+
+function shouldSuppressHandledTouchContextMenu(
+  target: EventTarget | null,
+  suppressedCell: HTMLElement | null,
+  suppressedUntil: number,
+): boolean {
+  if (Date.now() > suppressedUntil || !(target instanceof Element) || !suppressedCell) {
+    return false;
+  }
+
+  return suppressedCell.contains(target);
 }
