@@ -226,6 +226,52 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('suppresses the custom grid copy menu after a touch long press copy', async () => {
+    vi.useFakeTimers();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const toastMessages = stubBridgeToasts();
+
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText,
+      },
+    });
+
+    document.body.innerHTML = `
+      <table class="ui-iggrid-table">
+        <tbody>
+          <tr>
+            <td>LP-1001</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+
+    const cleanup = installGridCopy();
+    const cell = document.querySelector('td') as HTMLTableCellElement;
+    const contextEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 24 });
+
+    dispatchPointerEvent(cell, 'pointerdown', { clientX: 20, clientY: 24, pointerId: 7, pointerType: 'touch' });
+    await vi.advanceTimersByTimeAsync(550);
+    await flushMicrotasks();
+
+    cell.dispatchEvent(contextEvent);
+
+    expect(writeText).toHaveBeenCalledWith('LP-1001');
+    expect(toastMessages).toEqual([
+      {
+        kind: 'success',
+        message: 'Copied to clipboard.',
+      },
+    ]);
+    expect(contextEvent.defaultPrevented).toBe(true);
+    expect(document.getElementById('glide-grid-copy-menu')).toBeNull();
+
+    cleanup();
+  });
+
   it('shows the ADFS keyboard and types into the focused credential input', () => {
     document.body.innerHTML = `
       <form id="loginForm">
@@ -287,6 +333,29 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('keeps the ADFS symbol keyboard action rows aligned with the regular layout', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="toggle-mode"]')?.click();
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'));
+
+    expect(rows[2]?.firstElementChild?.textContent).toBe('Caps');
+    expect(rows[2]?.lastElementChild?.textContent).toBe('Enter');
+    expect(rows[3]?.lastElementChild?.textContent).toBe('Copy');
+    expect(rows[4]?.lastElementChild?.textContent).toBe('Paste');
+
+    cleanup();
+  });
+
   it('renders the ADFS keyboard with left-side controls and a right-side numpad and arrow cluster', () => {
     document.body.innerHTML = `
       <form id="loginForm">
@@ -316,12 +385,46 @@ describe('page enhancements', () => {
     expect(rows[3]?.querySelectorAll('[data-action="shift"]').length).toBe(1);
     expect(rows[3]?.querySelector('[data-action="backspace"]')).toBeNull();
     expect(document.querySelector('.glide-adfs-keyboard__side')).not.toBeNull();
-    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="7"]')?.textContent).toBe('7');
-    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-value="0"]')?.textContent).toBe('0');
+    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__side .glide-adfs-keyboard__key[data-value="7"]')?.textContent).toBe('7');
+    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__side .glide-adfs-keyboard__key[data-value="0"]')?.textContent).toBe('0');
     expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="arrow-up"]')?.textContent).toBe('^');
     expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="arrow-left"]')?.textContent).toBe('<');
     expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="arrow-down"]')?.textContent).toBe('v');
     expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="arrow-right"]')?.textContent).toBe('>');
+
+    cleanup();
+  });
+
+  it('shows shift previews on the top number row and swaps them when Shift is active', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'));
+    const numberOne = rows[0]?.children[1] as HTMLButtonElement;
+
+    expect(numberOne.querySelector('.glide-adfs-keyboard__key-primary')?.textContent).toBe('1');
+    expect(numberOne.querySelector('.glide-adfs-keyboard__key-preview')?.textContent).toBe('!');
+
+    usernameInput.focus();
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="shift"]')?.click();
+
+    const shiftedRows = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'));
+    const shiftedOne = shiftedRows[0]?.children[1] as HTMLButtonElement;
+
+    expect(shiftedOne.querySelector('.glide-adfs-keyboard__key-primary')?.textContent).toBe('!');
+    expect(shiftedOne.querySelector('.glide-adfs-keyboard__key-preview')?.textContent).toBe('1');
+
+    shiftedOne.click();
+
+    expect(usernameInput.value).toBe('!');
+    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="shift"]')?.getAttribute('aria-pressed')).toBe('false');
 
     cleanup();
   });
@@ -444,6 +547,36 @@ describe('page enhancements', () => {
     cleanup();
   });
 
+  it('preserves a trailing space when the host trims on change', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" value="abc" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const changeHandler = vi.fn(() => {
+      usernameInput.value = usernameInput.value.trimEnd();
+    });
+
+    usernameInput.addEventListener('change', changeHandler);
+    usernameInput.focus();
+    usernameInput.setSelectionRange(usernameInput.value.length, usernameInput.value.length);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="space"]')?.click();
+
+    expect(usernameInput.value).toBe('abc ');
+    expect(usernameInput.selectionStart).toBe(4);
+    expect(usernameInput.selectionEnd).toBe(4);
+    expect(changeHandler).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
   it('types with the side numpad and moves the caret with arrow keys', () => {
     document.body.innerHTML = `
       <form id="loginForm">
@@ -463,7 +596,7 @@ describe('page enhancements', () => {
     expect(usernameInput.selectionStart).toBe(1);
     expect(usernameInput.selectionEnd).toBe(1);
 
-    pressPointerKey('.glide-adfs-keyboard__key[data-value="7"]');
+    pressPointerKey('.glide-adfs-keyboard__side .glide-adfs-keyboard__key[data-value="7"]');
     expect(usernameInput.value).toBe('a7bcd');
     expect(usernameInput.selectionStart).toBe(2);
     expect(usernameInput.selectionEnd).toBe(2);
@@ -1093,6 +1226,91 @@ describe('page enhancements', () => {
 
     expect(usernameInput.value).toBe('Q!');
 
+    cleanup();
+  });
+
+  it('ignores the synthetic click after pointer activation rerenders a control key', () => {
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const capsKeyBefore = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="capslock"]') as HTMLButtonElement;
+
+    capsKeyBefore.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+    capsKeyBefore.dispatchEvent(new Event('pointerup', { bubbles: true, cancelable: true }));
+
+    const capsKeyAfter = document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="capslock"]') as HTMLButtonElement;
+
+    expect(capsKeyAfter).not.toBe(capsKeyBefore);
+    expect(capsKeyAfter.getAttribute('aria-pressed')).toBe('true');
+
+    capsKeyAfter.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+    expect(document.querySelector<HTMLButtonElement>('.glide-adfs-keyboard__key[data-action="capslock"]')?.getAttribute('aria-pressed')).toBe('true');
+
+    cleanup();
+  });
+
+  it('shows a popup and types the shifted alternative after long pressing a top-row number', () => {
+    vi.useFakeTimers();
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const usernameInput = document.getElementById('userNameInput') as HTMLInputElement;
+    const numberOne = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'))[0]?.children[1] as HTMLButtonElement;
+
+    usernameInput.focus();
+    numberOne.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+    vi.advanceTimersByTime(500);
+
+    expect(document.querySelector('.glide-adfs-keyboard__popup')?.textContent).toBe('!');
+    expect(document.querySelector('.glide-adfs-keyboard__popup')?.getAttribute('aria-hidden')).toBe('false');
+
+    numberOne.dispatchEvent(new Event('pointerup', { bubbles: true, cancelable: true }));
+
+    expect(usernameInput.value).toBe('!');
+    expect(document.querySelector('.glide-adfs-keyboard__popup')?.getAttribute('aria-hidden')).toBe('true');
+
+    vi.runOnlyPendingTimers();
+    cleanup();
+  });
+
+  it('suppresses the browser context menu during a long press on a top-row number key', () => {
+    vi.useFakeTimers();
+
+    document.body.innerHTML = `
+      <form id="loginForm">
+        <input id="userNameInput" />
+        <input id="passwordInput" type="password" />
+        <button id="submitButton" type="button">Sign in</button>
+      </form>
+    `;
+
+    const cleanup = installAdfsOverlayKeyboard();
+    const numberOne = Array.from(document.querySelectorAll<HTMLElement>('.glide-adfs-keyboard__row'))[0]?.children[1] as HTMLButtonElement;
+    const contextMenuEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+
+    numberOne.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }));
+    vi.advanceTimersByTime(500);
+    numberOne.dispatchEvent(contextMenuEvent);
+
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+    expect(document.querySelector('.glide-adfs-keyboard__popup')?.getAttribute('aria-hidden')).toBe('false');
+
+    numberOne.dispatchEvent(new Event('pointerup', { bubbles: true, cancelable: true }));
+    vi.runOnlyPendingTimers();
     cleanup();
   });
 

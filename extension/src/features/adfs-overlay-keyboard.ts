@@ -2,10 +2,15 @@ const rootClass = 'glide-adfs-keyboard';
 const layoutClass = `${rootClass}__layout`;
 const mainClass = `${rootClass}__main`;
 const panelClass = `${rootClass}__panel`;
+const popupClass = `${rootClass}__popup`;
+const popupKeyClass = `${rootClass}__popup-key`;
 const rowClass = `${rootClass}__row`;
 const sideClass = `${rootClass}__side`;
 const sideRowClass = `${rootClass}__side-row`;
 const keyClass = `${rootClass}__key`;
+const keyContentClass = `${rootClass}__key-content`;
+const keyPrimaryClass = `${rootClass}__key-primary`;
+const keyPreviewClass = `${rootClass}__key-preview`;
 const statusClass = `${rootClass}__status`;
 const styleId = `${rootClass}-style`;
 const formId = 'loginForm';
@@ -14,9 +19,22 @@ const credentialSelector = '#userNameInput, #passwordInput';
 const pressedBackgroundColor = '#1f1f1f';
 const pressedBoxShadow = 'inset 0 2px 4px rgba(0, 0, 0, 0.34), 0 0 0 rgba(0, 0, 0, 0.12)';
 const pressedTransform = 'translateY(3px)';
+const longPressDelayMs = 450;
 const statusDismissDelayMs = 2500;
 const keyboardSizeModes = ['compact', 'comfortable', 'full'] as const;
 const keyboardPreferencesStorageKey = 'glide.adfsKeyboard.preferences';
+const numberRowKeys = [
+  { value: '1', shiftValue: '!' },
+  { value: '2', shiftValue: '@' },
+  { value: '3', shiftValue: '#' },
+  { value: '4', shiftValue: '$' },
+  { value: '5', shiftValue: '%' },
+  { value: '6', shiftValue: '^' },
+  { value: '7', shiftValue: '&' },
+  { value: '8', shiftValue: '*' },
+  { value: '9', shiftValue: '(' },
+  { value: '0', shiftValue: ')' },
+] as const;
 const letterRows = [
   ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -49,6 +67,9 @@ interface KeyboardKey {
   action?: KeyAction;
   className: string;
   label: string;
+  longPressValue?: string;
+  previewLabel?: string;
+  resetShiftOnPress?: boolean;
   value?: string;
 }
 
@@ -87,7 +108,6 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
   let symbolMode = false;
   let keyboardSize: KeyboardSizeMode = storedPreferences.keyboardSize ?? 'compact';
   let numpadVisible = storedPreferences.numpadVisible ?? true;
-  let lastPointerActivatedButton: HTMLButtonElement | null = null;
 
   const persistKeyboardPreferences = (): void => {
     writeStoredKeyboardPreferences(activeWindow, {
@@ -166,10 +186,6 @@ export function installAdfsOverlayKeyboard(doc: Document = document): () => void
           },
           () => activeSelection,
           captureActiveSelection,
-          () => lastPointerActivatedButton,
-          (button) => {
-            lastPointerActivatedButton = button;
-          },
         ),
       );
       return;
@@ -265,22 +281,27 @@ function createKeyboard(
   setActiveInput: (input: HTMLInputElement | null) => void,
   getSavedSelection: () => InputSelectionSnapshot | null,
   saveSelection: (input: HTMLInputElement | null, preferredSnapshot?: InputSelectionSnapshot | null) => void,
-  getLastPointerActivatedButton: () => HTMLButtonElement | null,
-  setLastPointerActivatedButton: (button: HTMLButtonElement | null) => void,
 ): HTMLElement {
   const keyboard = doc.createElement('div');
   const panel = doc.createElement('div');
+  const popup = doc.createElement('div');
   const status = doc.createElement('div');
   let pressedPointerButton: HTMLButtonElement | null = null;
+  let longPressTimerId: number | null = null;
+  let longPressButton: HTMLButtonElement | null = null;
+  let longPressValue: string | null = null;
+  let suppressNextClick = false;
   keyboard.className = rootClass;
   keyboard.setAttribute('role', 'complementary');
   keyboard.setAttribute('aria-label', 'ADFS on-screen keyboard');
   panel.classList.add(panelClass);
+  popup.className = popupClass;
+  popup.setAttribute('aria-hidden', 'true');
   status.className = statusClass;
   status.setAttribute('aria-atomic', 'true');
   status.setAttribute('aria-live', 'polite');
   status.setAttribute('role', 'status');
-  keyboard.append(panel, status);
+  keyboard.append(panel, status, popup);
 
   let statusTimeoutId: number | null = null;
 
@@ -319,6 +340,74 @@ function createKeyboard(
     button.style.removeProperty('transform');
   };
 
+  const clearLongPressTimer = (): void => {
+    if (longPressTimerId !== null) {
+      activeWindow.clearTimeout(longPressTimerId);
+      longPressTimerId = null;
+    }
+  };
+
+  const hideLongPressPopup = (): void => {
+    popup.className = popupClass;
+    popup.replaceChildren();
+    popup.style.removeProperty('left');
+    popup.style.removeProperty('top');
+    popup.setAttribute('aria-hidden', 'true');
+  };
+
+  const clearLongPressState = (): void => {
+    clearLongPressTimer();
+    longPressButton = null;
+    longPressValue = null;
+    hideLongPressPopup();
+  };
+
+  const hasTriggeredLongPress = (button: HTMLButtonElement): boolean => {
+    return longPressButton === button && longPressValue !== null && popup.getAttribute('aria-hidden') === 'false';
+  };
+
+  const showLongPressPopup = (button: HTMLButtonElement, value: string): void => {
+    const keyboardRect = keyboard.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const popupKey = doc.createElement('div');
+
+    popupKey.className = popupKeyClass;
+    popupKey.textContent = value;
+    popup.className = `${popupClass} ${popupClass}--visible`;
+    popup.replaceChildren(popupKey);
+    popup.style.left = `${buttonRect.left - keyboardRect.left + buttonRect.width / 2}px`;
+    popup.style.top = `${buttonRect.top - keyboardRect.top - 8}px`;
+    popup.setAttribute('aria-hidden', 'false');
+  };
+
+  const armLongPress = (button: HTMLButtonElement): void => {
+    const candidateValue = button.dataset.longPressValue;
+
+    if (!candidateValue) {
+      clearLongPressState();
+      return;
+    }
+
+    if (longPressButton === button && (longPressTimerId !== null || hasTriggeredLongPress(button))) {
+      return;
+    }
+
+    clearLongPressTimer();
+    hideLongPressPopup();
+    longPressButton = button;
+    longPressValue = null;
+    longPressTimerId = activeWindow.setTimeout(() => {
+      longPressTimerId = null;
+
+      if (pressedPointerButton !== button || longPressButton !== button) {
+        return;
+      }
+
+      longPressValue = candidateValue;
+      showLongPressPopup(button, candidateValue);
+    }, longPressDelayMs);
+  };
+
   const setPressedPointerButton = (button: HTMLButtonElement | null): void => {
     if (pressedPointerButton === button) {
       return;
@@ -332,14 +421,17 @@ function createKeyboard(
     }
   };
 
-  const activateButton = (button: HTMLButtonElement): void => {
+  const activateButton = (button: HTMLButtonElement, overrideValue?: string): void => {
     const action = button.dataset.action as KeyAction | undefined;
+    const value = overrideValue ?? button.dataset.value;
+    const resetShiftOnPress = button.dataset.resetShiftOnPress === 'true';
 
     clearStatus();
     const shouldResetShift = handleKey(
       doc,
       action,
-      button.dataset.value,
+      value,
+      resetShiftOnPress,
       getActiveInput(),
       setActiveInput,
       getShiftActive,
@@ -389,6 +481,7 @@ function createKeyboard(
 
     saveSelection(getActiveInput());
     setPressedPointerButton(button);
+    armLongPress(button);
     event.preventDefault();
   });
 
@@ -402,6 +495,7 @@ function createKeyboard(
     if (button instanceof HTMLButtonElement) {
       saveSelection(getActiveInput());
       setPressedPointerButton(button);
+      armLongPress(button);
       event.preventDefault();
     }
   });
@@ -411,6 +505,7 @@ function createKeyboard(
 
     if (pressedPointerButton && hoveredButton !== pressedPointerButton) {
       clearPressingState(pressedPointerButton);
+      clearLongPressState();
       return;
     }
 
@@ -421,6 +516,7 @@ function createKeyboard(
 
   keyboard.addEventListener('pointerleave', () => {
     clearPressingState(pressedPointerButton);
+    clearLongPressState();
   });
 
   keyboard.addEventListener('mousemove', (event) => {
@@ -428,6 +524,7 @@ function createKeyboard(
 
     if (pressedPointerButton && hoveredButton !== pressedPointerButton) {
       clearPressingState(pressedPointerButton);
+      clearLongPressState();
       return;
     }
 
@@ -438,6 +535,13 @@ function createKeyboard(
 
   keyboard.addEventListener('mouseleave', () => {
     clearPressingState(pressedPointerButton);
+    clearLongPressState();
+  });
+
+  keyboard.addEventListener('contextmenu', (event) => {
+    if (event.target instanceof Element && event.target.closest('button')) {
+      event.preventDefault();
+    }
   });
 
   keyboard.addEventListener('pointerup', (event) => {
@@ -445,19 +549,20 @@ function createKeyboard(
 
     if (!(button instanceof HTMLButtonElement) || button !== pressedPointerButton) {
       setPressedPointerButton(null);
+      clearLongPressState();
       return;
     }
 
+    const overrideValue = hasTriggeredLongPress(button) ? longPressValue : null;
     setPressedPointerButton(null);
-    setLastPointerActivatedButton(button);
+    clearLongPressState();
+    suppressNextClick = true;
     event.preventDefault();
     activeWindow.setTimeout(() => {
-      if (getLastPointerActivatedButton() === button) {
-        setLastPointerActivatedButton(null);
-      }
+      suppressNextClick = false;
     }, 0);
 
-    activateButton(button);
+    activateButton(button, overrideValue ?? undefined);
     restoreCredentialInputFocus();
   });
 
@@ -467,6 +572,8 @@ function createKeyboard(
     if (button === pressedPointerButton) {
       setPressedPointerButton(null);
     }
+
+    clearLongPressState();
   });
 
   keyboard.addEventListener('mouseup', (event) => {
@@ -474,10 +581,12 @@ function createKeyboard(
 
     if (!button || button !== pressedPointerButton) {
       setPressedPointerButton(null);
+      clearLongPressState();
       return;
     }
 
     setPressedPointerButton(null);
+    clearLongPressState();
   });
 
   keyboard.addEventListener('click', (event) => {
@@ -489,17 +598,20 @@ function createKeyboard(
 
     event.preventDefault();
 
-    if (getLastPointerActivatedButton() === button) {
-      setLastPointerActivatedButton(null);
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      clearLongPressState();
       restoreCredentialInputFocus();
       return;
     }
 
     if (pressedPointerButton) {
       setPressedPointerButton(null);
+      clearLongPressState();
       return;
     }
 
+    clearLongPressState();
     clearPressingState(button);
 
     activateButton(button);
@@ -552,7 +664,23 @@ function renderKeyboard(
       button.type = 'button';
       button.tabIndex = -1;
       button.className = `${keyClass}${key.className ? ` ${key.className}` : ''}`;
-      button.textContent = key.label;
+
+      const content = doc.createElement('span');
+      const primaryLabel = doc.createElement('span');
+      content.className = keyContentClass;
+      primaryLabel.className = keyPrimaryClass;
+      primaryLabel.textContent = key.label;
+      content.append(primaryLabel);
+
+      if (key.previewLabel) {
+        const previewLabel = doc.createElement('span');
+        previewLabel.className = keyPreviewClass;
+        previewLabel.textContent = key.previewLabel;
+        content.append(previewLabel);
+      }
+
+      button.setAttribute('aria-label', key.previewLabel ? `${key.label} ${key.previewLabel}` : key.label);
+      button.append(content);
 
       if (key.action) {
         button.dataset.action = key.action;
@@ -565,6 +693,14 @@ function renderKeyboard(
 
       if (key.value) {
         button.dataset.value = key.value;
+      }
+
+      if (key.longPressValue) {
+        button.dataset.longPressValue = key.longPressValue;
+      }
+
+      if (key.resetShiftOnPress) {
+        button.dataset.resetShiftOnPress = 'true';
       }
 
       row.append(button);
@@ -583,7 +719,15 @@ function renderKeyboard(
         button.type = 'button';
         button.tabIndex = -1;
         button.className = `${keyClass}${key.className ? ` ${key.className}` : ''}`;
-        button.textContent = key.label;
+
+        const content = doc.createElement('span');
+        const primaryLabel = doc.createElement('span');
+        content.className = keyContentClass;
+        primaryLabel.className = keyPrimaryClass;
+        primaryLabel.textContent = key.label;
+        content.append(primaryLabel);
+        button.setAttribute('aria-label', key.label);
+        button.append(content);
 
         if (key.action) {
           button.dataset.action = key.action;
@@ -628,13 +772,13 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
         className: '',
         keys: [createActionKey('Caps', 'capslock', `${keyClass}--control ${keyClass}--wide-label ${keyClass}--left-column${capsLockActive ? ` ${keyClass}--active` : ''}`)]
           .concat(symbolRows[2].map((value) => createValueKey(value)))
-          .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
+          .concat([createActionKey('Enter', 'enter', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
         className: '',
         keys: symbolRows[3]
           .map((value) => createValueKey(value))
-          .concat([createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`)]),
+          .concat([createActionKey('Copy', 'copy', `${keyClass}--control ${keyClass}--wide-label`)]),
       },
       {
         className: '',
@@ -642,7 +786,7 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
           createActionKey('ABC', 'toggle-mode', `${keyClass}--control ${keyClass}--bottom-toggle`),
           createActionKey('Numpad', 'toggle-numpad', `${keyClass}--control ${keyClass}--bottom-toggle`),
           createActionKey('Space', 'space', `${keyClass}--space`),
-          createActionKey('Enter', 'enter', `${keyClass}--enter`),
+          createActionKey('Paste', 'paste', `${keyClass}--control ${keyClass}--wide-label`),
         ],
       },
     ];
@@ -652,7 +796,7 @@ function getRows(shiftActive: boolean, capsLockActive: boolean, symbolMode: bool
     {
       className: '',
         keys: [createActionKey('Size', 'cycle-size', `${keyClass}--control ${keyClass}--size-control ${keyClass}--wide-label`)]
-        .concat(letterRows[0].map((value) => createValueKey(value)))
+        .concat(getNumberRowKeys(shiftActive))
         .concat([createActionKey('Backspace', 'backspace', `${keyClass}--control ${keyClass}--wide-label`)]),
     },
     {
@@ -731,6 +875,21 @@ function createValueKey(value: string): KeyboardKey {
   };
 }
 
+function getNumberRowKeys(shiftActive: boolean): KeyboardKey[] {
+  return numberRowKeys.map(({ value, shiftValue }) => createNumberValueKey(value, shiftValue, shiftActive));
+}
+
+function createNumberValueKey(value: string, shiftValue: string, shiftActive: boolean): KeyboardKey {
+  return {
+    className: '',
+    label: shiftActive ? shiftValue : value,
+    longPressValue: shiftValue,
+    previewLabel: shiftActive ? value : shiftValue,
+    resetShiftOnPress: true,
+    value: shiftActive ? shiftValue : value,
+  };
+}
+
 function createActionKey(label: string, action: KeyAction, className = `${keyClass}--control`): KeyboardKey {
   return {
     action,
@@ -743,6 +902,7 @@ function handleKey(
   doc: Document,
   action: KeyAction | undefined,
   value: string | undefined,
+  resetShiftOnPress: boolean,
   activeInput: HTMLInputElement | null,
   setActiveInput: (input: HTMLInputElement | null) => void,
   getShiftActive: () => boolean,
@@ -850,7 +1010,7 @@ function handleKey(
   });
   saveSelection(input, nextSelection);
 
-  return Boolean(value && !getSymbolMode() && getShiftActive() && /^[a-z]$/i.test(value));
+  return Boolean(!getSymbolMode() && getShiftActive() && (resetShiftOnPress || Boolean(value && /^[a-z]$/i.test(value))));
 }
 
 function selectAllInputText(input: HTMLInputElement): InputSelectionSnapshot {
@@ -1043,7 +1203,6 @@ function mutateInput(
   applyInputSelectionRange(input, next.nextPosition, next.nextPosition, selection.direction);
 
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-  input.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
 
   return createInputSelectionSnapshot(input, next.nextPosition, next.nextPosition, selection.direction);
 }
@@ -1400,6 +1559,35 @@ function ensureStyles(doc: Document): void {
     .${statusClass}--error {
       background: rgba(122, 35, 35, 0.96);
     }
+    .${popupClass} {
+      position: absolute;
+      left: 0;
+      top: 0;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, -100%);
+      transition: opacity 120ms ease, transform 120ms ease;
+      z-index: 1;
+    }
+    .${popupClass}--visible {
+      opacity: 1;
+      transform: translate(-50%, calc(-100% - 10px));
+    }
+    .${popupKeyClass} {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: min(92px, calc(var(--glide-adfs-keyboard-key-height) * 1.35));
+      min-height: var(--glide-adfs-keyboard-key-height);
+      padding-inline: 18px;
+      border: 1px solid #747474;
+      border-radius: 10px;
+      background: #3a3a3a;
+      box-shadow: 0 16px 24px rgba(0, 0, 0, 0.34);
+      color: #fff;
+      font: 700 calc(var(--glide-adfs-keyboard-key-font-size) + 1px)/1 "Segoe UI", system-ui, sans-serif;
+      box-sizing: border-box;
+    }
     .${panelClass} {
       pointer-events: auto;
       padding: var(--glide-adfs-keyboard-panel-padding);
@@ -1454,12 +1642,36 @@ function ensureStyles(doc: Document): void {
       font: 600 var(--glide-adfs-keyboard-key-font-size)/1.1 "Segoe UI", system-ui, sans-serif;
       cursor: pointer;
       touch-action: manipulation;
+      user-select: none;
+      -webkit-touch-callout: none;
       white-space: nowrap;
       text-align: center;
       transform: translateY(0);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 0 rgba(0, 0, 0, 0.38);
       transition: transform 70ms ease, box-shadow 70ms ease, background-color 70ms ease;
       box-sizing: border-box;
+    }
+    .${keyContentClass} {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 100%;
+    }
+    .${keyPrimaryClass} {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .${keyPreviewClass} {
+      position: absolute;
+      top: 4px;
+      right: 2px;
+      min-width: 0;
+      font-size: max(11px, calc(var(--glide-adfs-keyboard-key-font-size) - 5px));
+      line-height: 1;
+      opacity: 0.82;
     }
     .${keyClass}:hover {
       background: #393939;
