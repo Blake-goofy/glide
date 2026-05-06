@@ -1,7 +1,7 @@
 {
   "name": "glide-scale-extension",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "GLIDE Chrome extension for SCALE workflow enhancements.",
   "author": "Blake Becker",
   "license": "UNLICENSED",
