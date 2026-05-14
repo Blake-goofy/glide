@@ -9,7 +9,7 @@ export function createManifest(scalePageMatches: string[]) {
   return {
     manifest_version: 3,
     name: 'GLIDE',
-    version: '0.2.0',
+    version: '0.2.1',
     description: 'SCALE workflow enhancements by Blake Becker.',
     icons: extensionIcons,
     action: {

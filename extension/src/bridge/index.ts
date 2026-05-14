@@ -27,12 +27,46 @@ declare global {
 
 const requestContext: ScaleRequestContext = {};
 const toastStyleId = 'glide-toast-style';
+const requestContextWaitTimeoutMs = 1500;
+const requestContextWaiters = new Set<() => void>();
+
+function hasCapturedAuthorizationHeader(): boolean {
+  return typeof requestContext.authorization === 'string' && requestContext.authorization.trim().length > 0;
+}
+
+function notifyRequestContextWaiters(): void {
+  if (!hasCapturedAuthorizationHeader()) {
+    return;
+  }
+
+  for (const resolve of Array.from(requestContextWaiters)) {
+    resolve();
+  }
+}
+
+async function waitForRequestAuthorizationHeader(timeoutMs = requestContextWaitTimeoutMs): Promise<void> {
+  if (hasCapturedAuthorizationHeader()) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      window.clearTimeout(timeoutId);
+      requestContextWaiters.delete(finish);
+      resolve();
+    };
+
+    const timeoutId = window.setTimeout(finish, timeoutMs);
+    requestContextWaiters.add(finish);
+  });
+}
 
 function captureHeader(name: string, value: string): void {
   const normalizedName = normalizeScaleHeaderName(name);
 
   if (normalizedName) {
     requestContext[normalizedName] = value;
+    notifyRequestContextWaiters();
   }
 }
 
@@ -65,6 +99,9 @@ function postToContent(message: GlideBridgeMessage): void {
 }
 
 async function callUserAction(action: UserActionProcedureName, changeValue = 'INIT', internalId = getMachineName() || 'INIT'): Promise<UserActionResponse> {
+  // Early feature calls can beat SCALE's first authenticated bootstrap request.
+  await waitForRequestAuthorizationHeader();
+
   const url = new URL('/UserAction/ExecProc', window.location.origin);
   url.searchParams.set('action', action);
   url.searchParams.set('internalID', internalId);
